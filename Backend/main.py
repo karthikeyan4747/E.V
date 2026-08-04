@@ -8,6 +8,9 @@ import os
 from fastapi.responses import FileResponse
 import tempfile
 app = FastAPI()
+from pathlib import Path
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
 import re
 from collections import Counter
@@ -15,6 +18,23 @@ from fastapi import UploadFile, File
 import subprocess
 import webbrowser
 import json
+
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173"
+    ).split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins or ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ToolRequest(BaseModel):
@@ -1880,3 +1900,29 @@ def health():
         "status":"online",
         "assistant":"E.V."
     }
+
+FRONTEND_DIST = Path(
+    os.getenv(
+        "FRONTEND_DIST",
+        Path(__file__).resolve().parents[1] / "Frontend" / "dist"
+    )
+)
+
+if FRONTEND_DIST.exists():
+    assets_dir = FRONTEND_DIST / "assets"
+
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    def serve_index():
+        return FileResponse(FRONTEND_DIST / "index.html")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_frontend(full_path: str):
+        requested_file = FRONTEND_DIST / full_path
+
+        if requested_file.is_file():
+            return FileResponse(requested_file)
+
+        return FileResponse(FRONTEND_DIST / "index.html")
