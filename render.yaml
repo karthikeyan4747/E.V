@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ev-assistant
+    runtime: docker
+    plan: free
+    autoDeploy: false
+    envVars:
+      - key: CHAT_API
+        sync: false
+      - key: INNOVATOR_API
+        sync: false
+      - key: CRITIC_API
+        sync: false
+      - key: ARCHITECT_API
+        sync: false
+      - key: CORS_ORIGINS
+        value: "*"
