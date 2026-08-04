@@ -14,6 +14,9 @@ import { QuickActions } from './components/QuickActions'
 import { Notifications } from './components/Notifications'
 import { CouncilView } from './components/CouncilView'
 import { ToolOverlay } from './components/ToolOverlay'
+import { useWakeWord } from "./hooks/useWakeWord";
+
+
 
 const initialMessages = [
   {
@@ -89,6 +92,9 @@ function App() {
         if (data.type === 'tool') {
           setToolTask({ label: data.response, status: 'executing' })
           notify('Tool Execution', data.response, data.success ? 'success' : 'error')
+          if (data.success && data.url) {
+            window.open(data.url, "_blank", "noopener,noreferrer")
+          }
           window.setTimeout(() => setToolTask({ label: data.message || data.response, status: 'complete' }), 800)
           window.setTimeout(() => setToolTask(null), 2600)
         }
@@ -107,8 +113,52 @@ function App() {
 
   const voice = useVoiceAssistant({
     onTranscript: (text) => {
-      if (text) submitMessage(text)
-    },
+
+  if (!text) return
+
+  const transcript = text.trim()
+
+  const wakeWords = [
+    "hey ev",
+    "hey e.v.",
+    "hey e v",
+    "ev",
+    "e.v.",
+    "e v"
+  ]
+  
+  useWakeWord(() => {
+
+  if (
+    voice.phase === "idle" &&
+    !isThinking
+  ) {
+    notify(
+      "Wake Word",
+      "Listening...",
+      "info"
+    )
+
+    voice.startListening()
+  }
+
+})
+
+  const lower = transcript.toLowerCase()
+
+  const wake = wakeWords.find(word => lower.startsWith(word))
+
+  if (!wake) return
+
+  const command = transcript.slice(wake.length).trim()
+
+  if (!command) {
+    notify("Wake Word", "I'm listening.", "info")
+    return
+  }
+
+  submitMessage(command)
+},
     onNotify: notify,
     onUserMessage: (text) => addMessage('user', text),
   })

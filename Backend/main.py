@@ -39,7 +39,7 @@ app.add_middleware(
 
 class ToolRequest(BaseModel):
     action: str
-    value: str = ""
+    url: str = ""
 
 class ChatRequest(BaseModel):
     message:str
@@ -134,183 +134,93 @@ Do not include enabled.
 TYPE 2 : TOOL EXECUTION
 --------------------------------------------------
 
-Use whenever the user wants E.V. to perform an action on the computer.
-
-Examples
-
-Open Chrome
-
-Open VS Code
-
-Open Calculator
-
-Open Explorer
-
-Search Google
-
-Search Amazon
-
-Search YouTube
-
-Open GitHub
-
-Open a Website
-
-Open a Folder
-
-Return
-
-{
-"type":"tool",
-"action":"...",
-"value":"...",
-"response":"...",
-"speech":"..."
-}
-
-Allowed actions
-
-open_application
-
-google_search
-
-amazon_search
-
-youtube_search
-
-open_url
-
-open_folder
-
-Allowed application values
-
-chrome
-
-vscode
-
-notepad
-
-calculator
-
-explorer
-
-cmd
-
-powershell
-
-Examples
-
-User:
-Open Chrome
-
-Return
-
-{
-"type":"tool",
-"action":"open_application",
-"value":"chrome",
-"response":"Opening Google Chrome.",
-"speech":"..."
-}
-
-User:
-Search Google for FastAPI
-
-Return
-
-{
-"type":"tool",
-"action":"google_search",
-"value":"FastAPI",
-"response":"Searching Google for FastAPI.",
-"speech":"..."
-}
-
-User:
-Open YouTube
+TYPE 2 : TOOL EXECUTION
 
 Return
 
 {
 "type":"tool",
 "action":"open_url",
-"value":"https://youtube.com",
-"response":"Opening YouTube.",
+"url":"...",
+"response":"...",
 "speech":"..."
 }
-
-Allowed actions
-
-open_application
-
-close_application
-
-google_search
-
-amazon_search
-
-youtube_search
-
-open_url
-
-open_folder
-
-Allowed application values
-
-chrome
-
-vscode
-
-notepad
-
-calculator
-
-explorer
-
-cmd
-
-powershell
 
 Examples
 
 User:
-Close Chrome
-
-Return
+Open Google
 
 {
 "type":"tool",
-"action":"close_application",
-"value":"chrome",
-"response":"Closing Google Chrome.",
-"speech":"Closing Chrome."
+"action":"open_url",
+"url":"https://www.google.com",
+"response":"Opening Google.",
+"speech":"Opening Google."
 }
 
 User:
-Close VS Code
-
-Return
+Search Google for FastAPI
 
 {
 "type":"tool",
-"action":"close_application",
-"value":"vscode",
-"response":"Closing Visual Studio Code.",
-"speech":"Closing Visual Studio Code."
+"action":"open_url",
+"url":"https://www.google.com/search?q=FastAPI",
+"response":"Searching Google for FastAPI.",
+"speech":"Searching Google."
 }
 
 User:
-Close Notepad
-
-Return
+Search YouTube for Iron Man
 
 {
 "type":"tool",
-"action":"close_application",
-"value":"notepad",
-"response":"Closing Notepad.",
-"speech":"Closing Notepad."
+"action":"open_url",
+"url":"https://www.youtube.com/results?search_query=Iron+Man",
+"response":"Searching YouTube for Iron Man.",
+"speech":"Searching YouTube."
 }
+
+User:
+Open GitHub
+
+{
+"type":"tool",
+"action":"open_url",
+"url":"https://github.com",
+"response":"Opening GitHub.",
+"speech":"Opening GitHub."
+}
+
+User:
+Open Gmail
+
+{
+"type":"tool",
+"action":"open_url",
+"url":"https://mail.google.com",
+"response":"Opening Gmail.",
+"speech":"Opening Gmail."
+}
+
+User:
+Open Reddit
+
+{
+"type":"tool",
+"action":"open_url",
+"url":"https://reddit.com",
+"response":"Opening Reddit.",
+"speech":"Opening Reddit."
+}
+
+Always return a complete HTTPS URL.
+
+Never return local file paths.
+
+Never return application names.
+
+Only use open_url for websites.
 --------------------------------------------------
 TYPE 3 : DEBATE MODE
 --------------------------------------------------
@@ -504,17 +414,18 @@ Always return exactly one valid JSON object matching one of the four formats abo
 
             tool_request = ToolRequest(
                 action=data["action"],
-                value=data["value"]
-            )
+                url=data["url"]
+)
 
             result = tool(tool_request)
 
             return {
-                "type": "tool",
-                "response": data["response"],
-                "speech": data["speech"],
-                "success": result["success"],
-                "message": result["message"]
+                "type":"tool",
+                "action":"open_url",
+                "url":result["url"],
+                "response":data["response"],
+                "speech":data["speech"],
+                "success":result["success"]
             }
 
         elif data["type"] == "debate":
@@ -1700,198 +1611,25 @@ def tts(request: TTSRequest):
 @app.post("/tool")
 def tool(request: ToolRequest):
 
-    action = request.action.lower()
-    value = request.value.lower()
-
     try:
 
-        # ---------- OPEN APPLICATIONS ----------
-
-        if action == "open_application":
-
-            if value == "chrome":
-                subprocess.Popen(
-                    r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-                )
-
-            elif value == "vscode":
-                subprocess.Popen(
-                    r"C:\Users\Karthikeyan K\AppData\Local\Programs\Microsoft VS Code\Code.exe"
-                )
-
-            elif value == "notepad":
-                subprocess.Popen("notepad")
-
-            elif value == "calculator":
-                subprocess.Popen("calc")
-
-            elif value == "cmd":
-                subprocess.Popen("cmd")
-
-            elif value == "powershell":
-                subprocess.Popen("powershell")
-
-            elif value == "explorer":
-                subprocess.Popen("explorer")
-
-            else:
-                return {
-                    "success": False,
-                    "message": "Application not supported.",
-                    "speech":"..."
-                }
+        if request.action == "open_url":
 
             return {
                 "success": True,
-                "message": f"Opened {value}.",
-                "speech":"..."
+                "url": request.url
             }
 
-        # ---------- GOOGLE ----------
-
-        elif action == "google_search":
-
-            webbrowser.open(
-                f"https://www.google.com/search?q={request.value}"
-            )
-
-            return {
-                "success": True,
-                "message": "Searching Google.",
-                "speech":"..."
-            }
-
-        # ---------- AMAZON ----------
-
-        elif action == "amazon_search":
-
-            webbrowser.open(
-                f"https://www.amazon.in/s?k={request.value}"
-            )
-
-            return {
-                "success": True,
-                "message": "Searching Amazon.",
-                "speech":"..."
-            }
-
-        # ---------- YOUTUBE ----------
-
-        elif action == "youtube_search":
-
-            webbrowser.open(
-                f"https://www.youtube.com/results?search_query={request.value}"
-            )
-
-            return {
-                "success": True,
-                "message": "Searching YouTube.",
-                "speech":"..."
-            }
-
-        # ---------- GITHUB ----------
-
-        elif action == "github":
-
-            webbrowser.open("https://github.com")
-
-            return {
-                "success": True,
-                "message": "Opening GitHub.",
-                "speech":"..."
-            }
-
-        # ---------- URL ----------
-
-        elif action == "open_url":
-
-            webbrowser.open(request.value)
-
-            return {
-                "success": True,
-                "message": "Opening Website.",
-                "speech":"..."
-            }
-
-        # ---------- FOLDER ----------
-
-        elif action == "open_folder":
-
-            os.startfile(request.value)
-
-            return {
-                "success": True,
-                "message": "Folder Opened.",
-                "speech":"..."
-            }
-
-        elif action == "close_application":
-
-            processes = {
-                "chrome": "chrome.exe",
-                "vscode": "Code.exe",
-                "notepad": "notepad.exe",
-                "calculator": "CalculatorApp.exe",
-                "cmd": "cmd.exe",
-                "powershell": "powershell.exe"
-            }
-
-            process = processes.get(value)
-
-            if process is None:
-                return {
-                    "success": False,
-                    "message": "Application not supported.",
-                    "speech":"..."
-                }
-
-            subprocess.run(
-                ["taskkill", "/F", "/IM", process],
-                capture_output=True
-            )
-
-            return {
-                "success": True,
-                "message": f"Closed {value}.",
-                "speech":"..."
-            }
-
-        # ---------- SHUTDOWN ----------
-
-        elif action == "shutdown":
-
-            subprocess.Popen("shutdown /s /t 0")
-
-            return {
-                "success": True,
-                "message": "Shutting Down."
-            }
-
-        # ---------- RESTART ----------
-
-        elif action == "restart":
-
-            subprocess.Popen("shutdown /r /t 0")
-
-            return {
-                "success": True,
-                "message": "Restarting."
-            }
-
-        else:
-
-            return {
-                "success": False,
-                "message": "Unknown Action.",
-                "speech":"..."
-            }
+        return {
+            "success": False,
+            "message": "Unknown action."
+        }
 
     except Exception as e:
 
         return {
             "success": False,
-            "message": str(e),
-            "speech":"I couldn't complete that request"
+            "message": str(e)
         }
 
 @app.get("/health")
