@@ -60,6 +60,7 @@ def chat(request:ChatRequest):
     client = Groq(api_key=CHAT_AI)
     completion = client.chat.completions.create(
     model="openai/gpt-oss-120b",
+    max_tokens=1000,
     messages=[
         {
         "role":"system",
@@ -655,9 +656,7 @@ Always return exactly one valid JSON object matching one of the four formats abo
       }
     ],
     temperature=0.3,
-    max_completion_tokens=2048,
-    reasoning_effort="medium",
-    stop=None
+    
 )
 
     response = completion.choices[0].message.content
@@ -1838,17 +1837,32 @@ def extract_decision(text):
 async def stt(audio: UploadFile = File(...)):
 
     client = Groq(api_key=CHAT_AI)
+    audio_bytes = await audio.read()
+    filename = audio.filename or "audio.webm"
+    content_type = audio.content_type or "audio/webm"
 
-    result = client.audio.transcriptions.create(
-        file=(audio.filename, await audio.read()),
-        model="whisper-large-v3",
-        response_format="verbose_json",
-        language="en"
-    )
+    if not audio_bytes:
+        return {"text": ""}
 
-    return {
-        "text": result.text
-    }
+    try:
+        result = client.audio.transcriptions.create(
+            file=(filename, audio_bytes, content_type),
+            model="whisper-large-v3",
+            response_format="verbose_json",
+            language="en",
+            temperature=0.0,
+            prompt="Transcribe the spoken English audio into plain text. Do not translate.",
+        )
+
+        transcript = getattr(result, "text", None)
+        if not transcript and isinstance(result, dict):
+            transcript = result.get("text") or "".join(
+                segment.get("text", "") for segment in result.get("segments", [])
+            )
+
+        return {"text": transcript or ""}
+    except Exception as exc:
+        return {"text": "", "error": str(exc)}
 
 @app.post("/tts")
 def tts(request: TTSRequest):

@@ -130,8 +130,8 @@ function App() {
           'e v',
         ]
 
-        const lower = transcript.toLowerCase()
-        const wake = wakeWords.find((word) => lower.startsWith(word))
+        const lower = transcript.toLowerCase().replace(/[^a-z0-9\s']/g, ' ')
+        const wake = wakeWords.find((word) => lower.startsWith(word) || lower === word)
 
         if (!wake) {
           console.log('Wake word not detected, ignoring transcript')

@@ -119,64 +119,43 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
       }
 
       recorder.onstop = async () => {
-  const blob = new Blob(chunksRef.current, {
-    type: recorder.mimeType || "audio/webm",
-  });
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
+        cleanupRecorder()
 
-  cleanupRecorder();
+        if (blob.size < 900) {
+          setPhase('idle')
+          return
+        }
 
-  console.log("Blob size:", blob.size);
-  console.log("Blob type:", blob.type);
+        setPhase('transcribing')
+        try {
+          const formData = new FormData()
+          formData.append('audio', blob, 'ev-command.webm')
+          const { data } = await api.post('/stt', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+          const text = data.text?.trim()
+          setPhase('thinking')
+          if (text) onTranscript(text)
+          else setPhase('idle')
+        } catch (error) {
 
-  if (blob.size < 900) {
-    console.log("Recording too small.");
-    setPhase("idle");
-    return;
+  console.error("STT ERROR:", error);
+
+  if (error.response) {
+    console.log("Response:", error.response.data);
+    console.log("Status:", error.response.status);
   }
 
-  setPhase("transcribing");
+  setPhase('idle');
 
-  try {
-    const formData = new FormData();
-    formData.append("audio", blob, "ev-command.webm");
-
-    const { data } = await api.post("/stt", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-
-    console.log("STT Response:", data);
-
-    const text = data.text?.trim();
-
-    console.log("Transcript:", text);
-
-    if (text) {
-      setPhase("idle");
-      console.log("Calling onTranscript...");
-      onTranscript(text);
-    } else {
-      console.log("Empty transcript returned.");
-      setPhase("idle");
-    }
-  } catch (error) {
-    console.error("STT ERROR:", error);
-
-    if (error.response) {
-      console.log("Status:", error.response.status);
-      console.log("Response:", error.response.data);
-    }
-
-    setPhase("idle");
-
-    onNotify(
-      "Speech Recognition Failed",
-      "I could not transcribe that audio.",
-      "error"
-    );
-  }
-};
+  onNotify(
+    'Speech Recognition Failed',
+    'I could not transcribe that audio.',
+    'error'
+  );
+}
+      }
 
       recorder.start()
       setPhase('listening')
