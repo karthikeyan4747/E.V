@@ -46,7 +46,16 @@ function CouncilCard({ member, data, delay, isThinking }) {
   )
 }
 
-export function CouncilView({ result, isThinking, onReturn, onAsk, voiceState, amplitude }) {
+export function CouncilView({
+    result,
+    isThinking,
+    onReturn,
+    onAsk,
+    voiceState,
+    amplitude,
+    onMic,
+    isListening,
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 1.04 }}
@@ -61,7 +70,7 @@ export function CouncilView({ result, isThinking, onReturn, onAsk, voiceState, a
             <ArrowLeft className="h-4 w-4" />
             Return
           </button>
-          <VoiceOrb state={voiceState} amplitude={amplitude} onClick={() => {}} />
+          <VoiceOrb state={voiceState} amplitude={amplitude} onClick={onMic}  isListening={isListening} />
           <p className="mt-5 text-center font-mono text-xs uppercase tracking-[0.18em] text-slate-500">Council Session</p>
         </HudPanel>
       </aside>
@@ -96,7 +105,7 @@ export function CouncilView({ result, isThinking, onReturn, onAsk, voiceState, a
               {result?.ev?.response || 'The final recommendation will appear here after all council nodes finish their analysis.'}
             </p>
           </HudPanel>
-          <InputDock disabled={isThinking} onSubmit={onAsk} onMic={() => {}} isListening={false} />
+          <InputDock disabled={isThinking} onSubmit={onAsk} onMic={onMic} isListening={isListening} />
         </motion.div>
       </section>
     </motion.div>

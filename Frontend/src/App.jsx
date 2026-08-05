@@ -14,7 +14,7 @@ import { QuickActions } from './components/QuickActions'
 import { Notifications } from './components/Notifications'
 import { CouncilView } from './components/CouncilView'
 import { ToolOverlay } from './components/ToolOverlay'
-import { useWakeWord } from "./hooks/useWakeWord";
+
 
 
 
@@ -56,6 +56,7 @@ function App() {
   const submitMessage = useCallback(
     async (text, explicitMode = mode) => {
       const cleanText = text.trim()
+      console.log("submitMessage received:", cleanText)
       if (!cleanText || isThinking) return
 
       addMessage('user', cleanText)
@@ -76,9 +77,9 @@ function App() {
           await playSpeechRef.current(data.ev?.speech || "The council's analysis is complete.")
           return
         }
-
+        console.log("Sending request to /chat...");
         const { data } = await api.post('/chat', { message: cleanText })
-
+        console.log("Chat response:", data);
         if (data.type === 'conversation_mode') {
           setConversationMode(Boolean(data.enabled))
           notify('Conversation Mode', data.response, 'mode')
@@ -113,52 +114,41 @@ function App() {
 
   const voice = useVoiceAssistant({
     onTranscript: (text) => {
+      if (!text) return
 
-  if (!text) return
+      const transcript = text.trim()
+      console.log('Voice transcript:', transcript, 'conversationMode=', conversationMode)
 
-  const transcript = text.trim()
+      let command = transcript
+      if (!conversationMode) {
+        const wakeWords = [
+          'hey ev',
+          'hey e.v.',
+          'hey e v',
+          'ev',
+          'e.v.',
+          'e v',
+        ]
 
-  const wakeWords = [
-    "hey ev",
-    "hey e.v.",
-    "hey e v",
-    "ev",
-    "e.v.",
-    "e v"
-  ]
-  
-  useWakeWord(() => {
+        const lower = transcript.toLowerCase()
+        const wake = wakeWords.find((word) => lower.startsWith(word))
 
-  if (
-    voice.phase === "idle" &&
-    !isThinking
-  ) {
-    notify(
-      "Wake Word",
-      "Listening...",
-      "info"
-    )
+        if (!wake) {
+          console.log('Wake word not detected, ignoring transcript')
+          return
+        }
 
-    voice.startListening()
-  }
+        command = transcript.slice(wake.length).trim()
 
-})
+        if (!command) {
+          notify('Wake Word', "I'm listening.", 'info')
+          return
+        }
+      }
 
-  const lower = transcript.toLowerCase()
-
-  const wake = wakeWords.find(word => lower.startsWith(word))
-
-  if (!wake) return
-
-  const command = transcript.slice(wake.length).trim()
-
-  if (!command) {
-    notify("Wake Word", "I'm listening.", "info")
-    return
-  }
-
-  submitMessage(command)
-},
+      console.log('Submitting voice command:', command)
+      submitMessage(command)
+    },
     onNotify: notify,
     onUserMessage: (text) => addMessage('user', text),
   })
@@ -231,14 +221,20 @@ function App() {
         <AnimatePresence mode="wait">
           {mode === 'council' ? (
             <CouncilView
-              key="council"
-              result={councilResult}
-              isThinking={isThinking}
-              onReturn={() => setMode('conversation')}
-              onAsk={(text) => submitMessage(text, 'council')}
-              voiceState={voiceState}
-              amplitude={voice.amplitude}
-            />
+    key="council"
+    result={councilResult}
+    isThinking={isThinking}
+    onReturn={() => setMode('conversation')}
+    onAsk={(text) => submitMessage(text, 'council')}
+    voiceState={voiceState}
+    amplitude={voice.amplitude}
+    onMic={() =>
+        voice.phase === "listening"
+            ? voice.stopListening()
+            : voice.startListening()
+    }
+    isListening={voice.phase === "listening"}
+/>
           ) : (
             <motion.div
               key="conversation"
@@ -251,11 +247,15 @@ function App() {
               <aside className="grid gap-4 xl:grid-rows-[auto_1fr_auto]">
                 <SystemStatus online={systemOnline} voiceState={voiceState} conversationMode={conversationMode} />
                 <HudPanel className="grid min-h-[470px] place-items-center p-6">
-                  <VoiceOrb
-                    state={voiceState}
-                    amplitude={voice.amplitude}
-                    onClick={() => (voice.phase === 'listening' ? voice.stopListening() : voice.startListening())}
-                  />
+                 <VoiceOrb
+  state={voiceState}
+  amplitude={voice.amplitude}
+  onClick={() =>
+    voice.phase === "listening"
+      ? voice.stopListening()
+      : voice.startListening()
+  }
+/>
                   <div className="mt-5 text-center">
                     <p className="font-mono text-lg uppercase tracking-[0.18em] text-ev-cyan">{voice.statusLabel}</p>
                     <p className="mt-3 font-mono text-xs uppercase tracking-[0.16em] text-slate-500">

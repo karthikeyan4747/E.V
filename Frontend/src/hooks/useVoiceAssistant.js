@@ -58,6 +58,7 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
     if (!analyser || !recorder || recorder.state === 'inactive') return
 
     const level = averageFrequency(analyser)
+    console.log("Level:",level.toFixed(3))
     const now = performance.now()
     setAmplitude(Math.max(0.05, level))
 
@@ -66,13 +67,23 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
       silenceStartedRef.current = null
     }
 
-    if (heardSpeechRef.current && level < 0.045) {
-      silenceStartedRef.current ??= now
-      if (now - silenceStartedRef.current > 1200) {
-        stopListening()
-        return
-      }
+   if (heardSpeechRef.current && level < 0.07) {
+
+    console.log("Silence detected");
+
+    silenceStartedRef.current ??= now;
+
+    console.log(now - silenceStartedRef.current);
+
+    if (now - silenceStartedRef.current > 700) {
+
+        console.log("Stopping recorder");
+
+        stopListening();
+
+        return;
     }
+}
 
     if (now - startedAtRef.current > 24000) {
       stopListening()
@@ -83,6 +94,7 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
   }, [stopListening])
 
   const startListening = useCallback(async () => {
+    console.log("startListening called");
     if (phase === 'listening') return
 
     try {
@@ -107,30 +119,64 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
       }
 
       recorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' })
-        cleanupRecorder()
+  const blob = new Blob(chunksRef.current, {
+    type: recorder.mimeType || "audio/webm",
+  });
 
-        if (blob.size < 900) {
-          setPhase('idle')
-          return
-        }
+  cleanupRecorder();
 
-        setPhase('transcribing')
-        try {
-          const formData = new FormData()
-          formData.append('audio', blob, 'ev-command.webm')
-          const { data } = await api.post('/stt', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          })
-          const text = data.text?.trim()
-          setPhase('thinking')
-          if (text) onTranscript(text)
-          else setPhase('idle')
-        } catch {
-          setPhase('idle')
-          onNotify('Speech Recognition Failed', 'I could not transcribe that audio.', 'error')
-        }
-      }
+  console.log("Blob size:", blob.size);
+  console.log("Blob type:", blob.type);
+
+  if (blob.size < 900) {
+    console.log("Recording too small.");
+    setPhase("idle");
+    return;
+  }
+
+  setPhase("transcribing");
+
+  try {
+    const formData = new FormData();
+    formData.append("audio", blob, "ev-command.webm");
+
+    const { data } = await api.post("/stt", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+
+    console.log("STT Response:", data);
+
+    const text = data.text?.trim();
+
+    console.log("Transcript:", text);
+
+    if (text) {
+      setPhase("idle");
+      console.log("Calling onTranscript...");
+      onTranscript(text);
+    } else {
+      console.log("Empty transcript returned.");
+      setPhase("idle");
+    }
+  } catch (error) {
+    console.error("STT ERROR:", error);
+
+    if (error.response) {
+      console.log("Status:", error.response.status);
+      console.log("Response:", error.response.data);
+    }
+
+    setPhase("idle");
+
+    onNotify(
+      "Speech Recognition Failed",
+      "I could not transcribe that audio.",
+      "error"
+    );
+  }
+};
 
       recorder.start()
       setPhase('listening')
