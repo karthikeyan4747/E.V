@@ -18,6 +18,7 @@ from fastapi import UploadFile, File
 import subprocess
 import webbrowser
 import json
+from pathlib import Path
 
 cors_origins = [
     origin.strip()
@@ -36,9 +37,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 class ToolRequest(BaseModel):
     action: str
+    value: str = ""
     url: str = ""
 
 class ChatRequest(BaseModel):
@@ -134,9 +135,13 @@ Do not include enabled.
 TYPE 2 : TOOL EXECUTION
 --------------------------------------------------
 
-TYPE 2 : TOOL EXECUTION
+Use this type whenever the user wants E.V. to perform an action instead of simply answering.
 
-Return
+Always infer intent naturally.
+
+Return exactly one JSON object.
+
+For WEBSITE ACTIONS return
 
 {
 "type":"tool",
@@ -166,19 +171,30 @@ Search Google for FastAPI
 "type":"tool",
 "action":"open_url",
 "url":"https://www.google.com/search?q=FastAPI",
-"response":"Searching Google for FastAPI.",
+"response":"Searching Google.",
 "speech":"Searching Google."
 }
 
 User:
-Search YouTube for Iron Man
+Search YouTube for Spider-Man
 
 {
 "type":"tool",
 "action":"open_url",
-"url":"https://www.youtube.com/results?search_query=Iron+Man",
-"response":"Searching YouTube for Iron Man.",
+"url":"https://www.youtube.com/results?search_query=Spider-Man",
+"response":"Searching YouTube for Spider-Man.",
 "speech":"Searching YouTube."
+}
+
+User:
+Search Amazon for headphones
+
+{
+"type":"tool",
+"action":"open_url",
+"url":"https://www.amazon.in/s?k=headphones",
+"response":"Searching Amazon for headphones.",
+"speech":"Searching Amazon."
 }
 
 User:
@@ -214,13 +230,253 @@ Open Reddit
 "speech":"Opening Reddit."
 }
 
+User:
+Open ChatGPT
+
+{
+"type":"tool",
+"action":"open_url",
+"url":"https://chatgpt.com",
+"response":"Opening ChatGPT.",
+"speech":"Opening ChatGPT."
+}
+
 Always return a complete HTTPS URL.
 
-Never return local file paths.
+Never return partial URLs.
 
-Never return application names.
+--------------------------------------------------
 
-Only use open_url for websites.
+For DESKTOP APPLICATIONS return
+
+{
+"type":"tool",
+"action":"open_application",
+"value":"...",
+"response":"...",
+"speech":"..."
+}
+
+Supported application values
+
+chrome
+vscode
+powershell
+cmd
+explorer
+notepad
+calculator
+
+Examples
+
+User:
+Open Chrome
+
+{
+"type":"tool",
+"action":"open_application",
+"value":"chrome",
+"response":"Opening Chrome.",
+"speech":"Opening Chrome."
+}
+
+User:
+Launch Visual Studio Code
+
+{
+"type":"tool",
+"action":"open_application",
+"value":"vscode",
+"response":"Opening Visual Studio Code.",
+"speech":"Opening Visual Studio Code."
+}
+
+User:
+Open PowerShell
+
+{
+"type":"tool",
+"action":"open_application",
+"value":"powershell",
+"response":"Opening PowerShell.",
+"speech":"Opening PowerShell."
+}
+
+User:
+Open File Explorer
+
+{
+"type":"tool",
+"action":"open_application",
+"value":"explorer",
+"response":"Opening File Explorer.",
+"speech":"Opening File Explorer."
+}
+
+User:
+Open Calculator
+
+{
+"type":"tool",
+"action":"open_application",
+"value":"calculator",
+"response":"Opening Calculator.",
+"speech":"Opening Calculator."
+}
+
+--------------------------------------------------
+
+For CLOSING APPLICATIONS return
+
+{
+"type":"tool",
+"action":"close_application",
+"value":"...",
+"response":"...",
+"speech":"..."
+}
+
+Supported values
+
+chrome
+vscode
+powershell
+cmd
+explorer
+notepad
+calculator
+
+Example
+
+User:
+Close Chrome
+
+{
+"type":"tool",
+"action":"close_application",
+"value":"chrome",
+"response":"Closing Chrome.",
+"speech":"Closing Chrome."
+}
+
+User:
+Close VS Code
+
+{
+"type":"tool",
+"action":"close_application",
+"value":"vscode",
+"response":"Closing Visual Studio Code.",
+"speech":"Closing Visual Studio Code."
+}
+
+--------------------------------------------------
+
+For FOLDERS return
+
+{
+"type":"tool",
+"action":"open_folder",
+"value":"...",
+"response":"...",
+"speech":"..."
+}
+
+Examples
+
+Downloads
+
+{
+"type":"tool",
+"action":"open_folder",
+"value":"downloads",
+"response":"Opening Downloads.",
+"speech":"Opening Downloads."
+}
+
+Desktop
+
+{
+"type":"tool",
+"action":"open_folder",
+"value":"desktop",
+"response":"Opening Desktop.",
+"speech":"Opening Desktop."
+}
+
+Documents
+
+{
+"type":"tool",
+"action":"open_folder",
+"value":"documents",
+"response":"Opening Documents.",
+"speech":"Opening Documents."
+}
+
+--------------------------------------------------
+
+TOOL DETECTION
+
+Infer intent naturally.
+
+Examples
+
+Open Chrome
+
+Launch VS Code
+
+Start Calculator
+
+Open Downloads
+
+Search Google for LangGraph
+
+Search YouTube for Iron Man
+
+Open GitHub
+
+Open Reddit
+
+Open ChatGPT
+
+Open Gmail
+
+Open Amazon
+
+Search Amazon for SSD
+
+All of these should return a TOOL response.
+
+Never answer with TYPE CHAT when the user is clearly requesting an action.
+
+--------------------------------------------------
+
+VOICE RULES
+
+The speech field is for text-to-speech only.
+
+Keep it between 2 and 8 words.
+
+Examples
+
+Opening Chrome.
+
+Searching Google.
+
+Opening GitHub.
+
+Opening Downloads.
+
+Closing Chrome.
+
+Task completed.
+
+Permission required.
+
+I couldn't complete that.
+
+Never read long explanations aloud.
 --------------------------------------------------
 TYPE 3 : DEBATE MODE
 --------------------------------------------------
@@ -414,18 +670,20 @@ Always return exactly one valid JSON object matching one of the four formats abo
 
             tool_request = ToolRequest(
                 action=data["action"],
-                url=data["url"]
-)
+                value=data.get("value", ""),
+                url=data.get("url", "")
+            )
 
             result = tool(tool_request)
 
             return {
-                "type":"tool",
-                "action":"open_url",
-                "url":result["url"],
-                "response":data["response"],
-                "speech":data["speech"],
-                "success":result["success"]
+                "type": "tool",
+                "action": data["action"],
+                "response": data["response"],
+                "speech": data["speech"],
+                "success": result["success"],
+                "message": result.get("message"),
+                "url": result.get("url")
             }
 
         elif data["type"] == "debate":
@@ -440,6 +698,16 @@ Always return exactly one valid JSON object matching one of the four formats abo
 
             return data
 
+    except json.JSONDecodeError:
+
+        return {
+            "type": "chat",
+            "response": response,
+            "speech": "I've completed your request."
+        }
+
+    
+       
     except json.JSONDecodeError:
 
         return {
@@ -1608,21 +1876,153 @@ def tts(request: TTSRequest):
     )
 
 
+import os
+import subprocess
+import webbrowser
+from pathlib import Path
+
 @app.post("/tool")
 def tool(request: ToolRequest):
 
+    action = request.action.lower()
+    value = request.value.lower()
+
     try:
 
-        if request.action == "open_url":
+        # -----------------------------
+        # OPEN WEBSITE
+        # -----------------------------
+        if action == "open_url":
+
+            webbrowser.open(request.url)
 
             return {
                 "success": True,
+                "message": "Website opened.",
                 "url": request.url
             }
 
+        # -----------------------------
+        # OPEN APPLICATION
+        # -----------------------------
+        elif action == "open_application":
+
+            apps = {
+
+                "chrome":
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+
+                "vscode":
+                r"C:\Users\Karthikeyan K\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+
+                "powershell":
+                "powershell.exe",
+
+                "cmd":
+                "cmd.exe",
+
+                "notepad":
+                "notepad.exe",
+
+                "calculator":
+                "calc.exe",
+
+                "explorer":
+                "explorer.exe"
+
+            }
+
+            if value not in apps:
+
+                return {
+                    "success": False,
+                    "message": "Unknown application."
+                }
+
+            subprocess.Popen(apps[value])
+
+            return {
+                "success": True,
+                "message": f"{value} opened."
+            }
+
+        # -----------------------------
+        # CLOSE APPLICATION
+        # -----------------------------
+        elif action == "close_application":
+
+            processes = {
+
+                "chrome": "chrome.exe",
+                "vscode": "Code.exe",
+                "powershell": "powershell.exe",
+                "cmd": "cmd.exe",
+                "notepad": "notepad.exe",
+                "calculator": "CalculatorApp.exe",
+                "explorer": "explorer.exe"
+
+            }
+
+            if value not in processes:
+
+                return {
+                    "success": False,
+                    "message": "Unknown application."
+                }
+
+            subprocess.run(
+                [
+                    "taskkill",
+                    "/F",
+                    "/IM",
+                    processes[value]
+                ],
+                capture_output=True
+            )
+
+            return {
+                "success": True,
+                "message": f"{value} closed."
+            }
+
+        # -----------------------------
+        # OPEN FOLDER
+        # -----------------------------
+        elif action == "open_folder":
+
+            home = Path.home()
+
+            folders = {
+
+                "desktop": home / "Desktop",
+                "downloads": home / "Downloads",
+                "documents": home / "Documents",
+                "pictures": home / "Pictures",
+                "videos": home / "Videos",
+                "music": home / "Music"
+
+            }
+
+            if value not in folders:
+
+                return {
+                    "success": False,
+                    "message": "Unknown folder."
+                }
+
+            os.startfile(folders[value])
+
+            return {
+                "success": True,
+                "message": f"{value} opened."
+            }
+
+        # -----------------------------
+        # UNKNOWN TOOL
+        # -----------------------------
         return {
             "success": False,
-            "message": "Unknown action."
+            "message": "Unknown tool."
         }
 
     except Exception as e:
@@ -1631,7 +2031,6 @@ def tool(request: ToolRequest):
             "success": False,
             "message": str(e)
         }
-
 @app.get("/health")
 def health():
     return {
