@@ -224,6 +224,8 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
 
   useEffect(() => cleanupRecorder, [cleanupRecorder])
 
+  
+
   return {
     phase,
     amplitude,

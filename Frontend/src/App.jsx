@@ -14,7 +14,7 @@ import { QuickActions } from './components/QuickActions'
 import { Notifications } from './components/Notifications'
 import { CouncilView } from './components/CouncilView'
 import { ToolOverlay } from './components/ToolOverlay'
-
+import { useWakeWord } from './hooks/useWakeWord'
 
 
 
@@ -37,7 +37,7 @@ function App() {
   const [toolTask, setToolTask] = useState(null)
   const [councilResult, setCouncilResult] = useState(null)
   const [isThinking, setIsThinking] = useState(false)
-  const playSpeechRef = useRef(async () => {})
+  const playSpeechRef = useRef(async () => { })
 
   const notify = useCallback((title, detail, tone = 'info') => {
     const notification = { id: crypto.randomUUID(), title, detail, tone }
@@ -111,7 +111,11 @@ function App() {
     },
     [addMessage, isThinking, mode, notify],
   )
-
+  const wakeWord = useWakeWord({
+    onWake: () => {
+      console.log('🔥 E.V. WAKE WORD DETECTED')
+    },
+  })
   const voice = useVoiceAssistant({
     onTranscript: (text) => {
       if (!text) return
@@ -199,6 +203,12 @@ function App() {
               <div>
                 <h1 className="font-display text-4xl font-bold tracking-normal text-ev-red sm:text-5xl">E.V.</h1>
                 <p className="font-mono text-xs uppercase tracking-[0.24em] text-ev-cyan">Enhanced Virtual Intelligence</p>
+                <button
+                  onClick={wakeWord.startWakeWord}
+                  className="rounded border border-cyan-400 px-4 py-2"
+                >
+                  Start E.V. Wake Word
+                </button>
               </div>
             </div>
             <div className="hidden items-center gap-2 font-mono text-xs uppercase text-ev-blue md:flex">
@@ -221,20 +231,20 @@ function App() {
         <AnimatePresence mode="wait">
           {mode === 'council' ? (
             <CouncilView
-    key="council"
-    result={councilResult}
-    isThinking={isThinking}
-    onReturn={() => setMode('conversation')}
-    onAsk={(text) => submitMessage(text, 'council')}
-    voiceState={voiceState}
-    amplitude={voice.amplitude}
-    onMic={() =>
-        voice.phase === "listening"
-            ? voice.stopListening()
-            : voice.startListening()
-    }
-    isListening={voice.phase === "listening"}
-/>
+              key="council"
+              result={councilResult}
+              isThinking={isThinking}
+              onReturn={() => setMode('conversation')}
+              onAsk={(text) => submitMessage(text, 'council')}
+              voiceState={voiceState}
+              amplitude={voice.amplitude}
+              onMic={() =>
+                voice.phase === "listening"
+                  ? voice.stopListening()
+                  : voice.startListening()
+              }
+              isListening={voice.phase === "listening"}
+            />
           ) : (
             <motion.div
               key="conversation"
@@ -247,15 +257,15 @@ function App() {
               <aside className="grid gap-4 xl:grid-rows-[auto_1fr_auto]">
                 <SystemStatus online={systemOnline} voiceState={voiceState} conversationMode={conversationMode} />
                 <HudPanel className="grid min-h-[470px] place-items-center p-6">
-                 <VoiceOrb
-  state={voiceState}
-  amplitude={voice.amplitude}
-  onClick={() =>
-    voice.phase === "listening"
-      ? voice.stopListening()
-      : voice.startListening()
-  }
-/>
+                  <VoiceOrb
+                    state={voiceState}
+                    amplitude={voice.amplitude}
+                    onClick={() =>
+                      voice.phase === "listening"
+                        ? voice.stopListening()
+                        : voice.startListening()
+                    }
+                  />
                   <div className="mt-5 text-center">
                     <p className="font-mono text-lg uppercase tracking-[0.18em] text-ev-cyan">{voice.statusLabel}</p>
                     <p className="mt-3 font-mono text-xs uppercase tracking-[0.16em] text-slate-500">
