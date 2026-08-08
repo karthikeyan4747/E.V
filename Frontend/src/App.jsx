@@ -38,6 +38,8 @@ function App() {
   const [councilResult, setCouncilResult] = useState(null)
   const [isThinking, setIsThinking] = useState(false)
   const playSpeechRef = useRef(async () => { })
+  const wakeWordRef = useRef(null)
+  
 
   const notify = useCallback((title, detail, tone = 'info') => {
     const notification = { id: crypto.randomUUID(), title, detail, tone }
@@ -112,10 +114,19 @@ function App() {
     [addMessage, isThinking, mode, notify],
   )
   const wakeWord = useWakeWord({
-    onWake: () => {
+    onWake: async () => {
       console.log('🔥 E.V. WAKE WORD DETECTED')
+
+      await wakeWordRef.current?.stopWakeWord()
+
+      setTimeout(() => {
+        console.log('🎤 Starting E.V. command recording...')
+        voice.startListening()
+      }, 250)
     },
   })
+
+  wakeWordRef.current = wakeWord
   const voice = useVoiceAssistant({
     onTranscript: (text) => {
       if (!text) return

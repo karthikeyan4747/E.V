@@ -3,32 +3,62 @@ import WakeWordEngine from 'openwakeword-wasm-browser'
 
 export function useWakeWord({ onWake }) {
     const engineRef = useRef(null)
+    const listeningRef = useRef(false)
+    const startingRef = useRef(false)
+
     const [wakeWordReady, setWakeWordReady] = useState(false)
     const [wakeWordListening, setWakeWordListening] = useState(false)
     const [wakeWordError, setWakeWordError] = useState(null)
-    const listeningRef = useRef(false)
 
     const startWakeWord = useCallback(async () => {
+        // Already listening
         if (listeningRef.current) {
             console.log('Wake word already listening')
             return
         }
+
+        // Already starting/loading
+        if (startingRef.current) {
+            console.log('Wake word is already starting')
+            return
+        }
+
+        startingRef.current = true
+
         try {
             setWakeWordError(null)
 
+            // --------------------------------
+            // CREATE ENGINE
+            // --------------------------------
+
             if (!engineRef.current) {
+                console.log('Creating wake word engine...')
+
                 const engine = new WakeWordEngine({
                     baseAssetUrl: '/openwakeword/models',
                     keywords: ['hey_jarvis'],
-                    detectionThreshold: 0.1,
+                    detectionThreshold: 0.3,
                     cooldownMs: 2000,
                 })
 
                 engineRef.current = engine
 
+                // --------------------------------
+                // LOAD MODELS
+                // --------------------------------
+
+                console.log('Loading wake word models...')
+
                 await engine.load()
 
-                engine.on('detect', ({ keyword, score }) => {
+                console.log('Wake word models loaded')
+
+                // --------------------------------
+                // EVENTS
+                // --------------------------------
+
+                engine.on('detect', async ({ keyword, score }) => {
                     console.log(
                         'WAKE WORD:',
                         keyword,
@@ -36,6 +66,9 @@ export function useWakeWord({ onWake }) {
                         score.toFixed(3)
                     )
 
+                   
+
+                    // Tell E.V. to start recording the command
                     onWake?.()
                 })
 
@@ -55,37 +88,65 @@ export function useWakeWord({ onWake }) {
                 setWakeWordReady(true)
             }
 
-            await engineRef.current.start()
-            listeningRef.current = true
+            // --------------------------------
+            // START MICROPHONE
+            // --------------------------------
 
+            console.log('Starting wake word listener...')
+
+            await engineRef.current.start()
+
+            listeningRef.current = true
             setWakeWordListening(true)
 
             console.log('Wake word listener started')
+
         } catch (error) {
             console.error('Failed to start wake word:', error)
-            setWakeWordError(error)
+
+            listeningRef.current = false
             setWakeWordListening(false)
+            setWakeWordError(error)
+
+        } finally {
+            startingRef.current = false
         }
     }, [onWake])
 
     const stopWakeWord = useCallback(async () => {
-        
-        if (!engineRef.current) return
+        if (!engineRef.current) {
+            return
+        }
+
+        if (!listeningRef.current) {
+            console.log('Wake word is not listening')
+            return
+        }
 
         try {
+            console.log('Stopping wake word listener...')
+
             await engineRef.current.stop()
+
+            console.log('Wake word listener stopped')
+
         } catch (error) {
             console.error('Failed to stop wake word:', error)
-        }
-        listeningRef.current = false
-        setWakeWordListening(false)
 
-        console.log('Wake word listener stopped')
+        } finally {
+            listeningRef.current = false
+            setWakeWordListening(false)
+        }
     }, [])
 
     useEffect(() => {
         return () => {
-            engineRef.current?.stop().catch(() => { })
+            if (engineRef.current) {
+                engineRef.current.stop().catch(() => { })
+            }
+
+            listeningRef.current = false
+            startingRef.current = false
         }
     }, [])
 
