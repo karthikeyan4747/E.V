@@ -37,8 +37,14 @@ export function useWakeWord({ onWake }) {
 
                 const engine = new WakeWordEngine({
                     baseAssetUrl: '/openwakeword/models',
-                    keywords: ['hey_jarvis'],
-                    detectionThreshold: 0.3,
+
+                    keywords: ['Hey_e_v'],
+
+                    modelFiles: {
+                        Hey_e_v: 'Hey_e_v.onnx',
+                    },
+
+                    detectionThreshold: 0.2,
                     cooldownMs: 2000,
                 })
 
@@ -66,7 +72,7 @@ export function useWakeWord({ onWake }) {
                         score.toFixed(3)
                     )
 
-                   
+
 
                     // Tell E.V. to start recording the command
                     onWake?.()

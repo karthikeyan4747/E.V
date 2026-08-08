@@ -1,0 +1,52 @@
+# @title  { display-mode: "form" }
+# @markdown # 1. Test Example Training Clip Generation
+# @markdown Since openWakeWord models are trained on synthetic examples of your
+# @markdown target wake word, it's a good idea to make sure that the examples
+# @markdown sound correct. Type in your target wake word below, and run the
+# @markdown cell to listen to it.
+# @markdown
+# @markdown Here are some tips that can help get the wake word to sound right:
+
+# @markdown - If your wake word isn't being pronounced in the way
+# @markdown you want, try spelling out the sounds phonetically with underscores
+# @markdown separating each part.
+# @markdown For example: "hey siri" --> "hey_seer_e".
+
+# @markdown - Spell out numbers ("2" --> "two")
+
+# @markdown - Avoid all punctuation except for "?" and "!", and remove unicode characters
+
+import os
+import sys
+from IPython.display import Audio
+
+if not os.path.exists("./piper-sample-generator"):
+    !git clone https://github.com/rhasspy/piper-sample-generator
+    !wget -O piper-sample-generator/models/en_US-libritts_r-medium.pt 'https://github.com/rhasspy/piper-sample-generator/releases/download/v2.0.0/en_US-libritts_r-medium.pt'
+    !cd piper-sample-generator && git checkout 213d4d5
+
+    # Install system dependencies
+    !pip install piper-tts piper-phonemize-cross
+    !pip install webrtcvad
+    # !pip install 'torch<=2.5' torchvision torchaudio
+    !pip install torch==2.5.0 torchvision==0.20.0 torchaudio==2.5.0 --index-url https://download.pytorch.org/whl/cu121
+
+target_word = 'Hey Ev' # @param {type:"string"}
+
+if "piper-sample-generator/" not in sys.path:
+    sys.path.append("piper-sample-generator/")
+from generate_samples import generate_samples
+
+def text_to_speech(text):
+    generate_samples(text = text,
+                max_samples=1,
+                length_scales=[1.1],
+                noise_scales=[0.7], noise_scale_ws = [0.7],
+                output_dir = './', batch_size=1, auto_reduce_batch_size=True,
+                file_names=["test_generation.wav"]
+                )
+
+text_to_speech(target_word)
+
+from IPython.display import Audio
+Audio("test_generation.wav", autoplay=True)
