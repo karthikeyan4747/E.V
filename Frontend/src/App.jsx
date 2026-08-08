@@ -28,6 +28,8 @@ const initialMessages = [
 ]
 
 function App() {
+  const wakeStartedRef = useRef(false)
+  const wakeWordRef = useRef(null)
   const clock = useClock()
   const [messages, setMessages] = useState(initialMessages)
   const [mode, setMode] = useState('conversation')
@@ -38,8 +40,8 @@ function App() {
   const [councilResult, setCouncilResult] = useState(null)
   const [isThinking, setIsThinking] = useState(false)
   const playSpeechRef = useRef(async () => { })
-  const wakeWordRef = useRef(null)
-//hi
+  
+  //hi
 
   const notify = useCallback((title, detail, tone = 'info') => {
     const notification = { id: crypto.randomUUID(), title, detail, tone }
@@ -117,14 +119,33 @@ function App() {
     onWake: async () => {
       console.log('🔥 E.V. WAKE WORD DETECTED')
 
+      // Stop local wake-word listener
       await wakeWordRef.current?.stopWakeWord()
 
+      // Give Chrome a moment to release the microphone
       setTimeout(() => {
         console.log('🎤 Starting E.V. command recording...')
+
         voice.startListening()
       }, 250)
     },
   })
+
+  wakeWordRef.current = wakeWord
+
+  useEffect(() => {
+    if (wakeStartedRef.current) return
+
+    wakeStartedRef.current = true
+
+    console.log('🤖 Starting E.V. wake-word system...')
+
+    wakeWord.startWakeWord()
+
+    return () => {
+      wakeWord.stopWakeWord()
+    }
+  }, [])
 
   wakeWordRef.current = wakeWord
   const voice = useVoiceAssistant({
@@ -132,41 +153,24 @@ function App() {
       if (!text) return
 
       const transcript = text.trim()
-      console.log('Voice transcript:', transcript, 'conversationMode=', conversationMode)
 
-      let command = transcript
-      if (!conversationMode) {
-        const wakeWords = [
-          'hey ev',
-          'hey e.v.',
-          'hey e v',
-          'ev',
-          'e.v.',
-          'e v',
-        ]
+      console.log(
+        'Voice transcript:',
+        transcript,
+        'conversationMode=',
+        conversationMode
+      )
 
-        const lower = transcript.toLowerCase().replace(/[^a-z0-9\s']/g, ' ')
-        const wake = wakeWords.find((word) => lower.startsWith(word) || lower === word)
+      console.log('Submitting voice command:', transcript)
 
-        if (!wake) {
-          console.log('Wake word not detected, ignoring transcript')
-          return
-        }
-
-        command = transcript.slice(wake.length).trim()
-
-        if (!command) {
-          notify('Wake Word', "I'm listening.", 'info')
-          return
-        }
-      }
-
-      console.log('Submitting voice command:', command)
-      submitMessage(command)
+      submitMessage(transcript)
     },
+
     onNotify: notify,
+
     onUserMessage: (text) => addMessage('user', text),
   })
+
   playSpeechRef.current = voice.playSpeech
 
   useEffect(() => {
