@@ -39,7 +39,7 @@ function App() {
   const [isThinking, setIsThinking] = useState(false)
   const playSpeechRef = useRef(async () => { })
   const wakeWordRef = useRef(null)
-  
+//hi
 
   const notify = useCallback((title, detail, tone = 'info') => {
     const notification = { id: crypto.randomUUID(), title, detail, tone }
