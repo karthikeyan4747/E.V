@@ -40,7 +40,7 @@ function App() {
   const [councilResult, setCouncilResult] = useState(null)
   const [isThinking, setIsThinking] = useState(false)
   const playSpeechRef = useRef(async () => { })
-  
+
   //hi
 
   const notify = useCallback((title, detail, tone = 'info') => {
@@ -169,6 +169,14 @@ function App() {
     onNotify: notify,
 
     onUserMessage: (text) => addMessage('user', text),
+
+    onSpeechEnded: async () => {
+      console.log('🔄 Restarting E.V. wake-word listener...')
+
+      setTimeout(() => {
+        wakeWordRef.current?.startWakeWord()
+      }, 300)
+    },
   })
 
   playSpeechRef.current = voice.playSpeech

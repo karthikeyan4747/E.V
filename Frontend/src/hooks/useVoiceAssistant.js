@@ -19,7 +19,7 @@ function averageFrequency(analyser) {
   return Math.min(1, sum / data.length / 120)
 }
 
-export function useVoiceAssistant({ onTranscript, onNotify }) {
+export function useVoiceAssistant({ onTranscript, onNotify, onSpeechEnded }) {
   const [phase, setPhase] = useState('idle')
   const [amplitude, setAmplitude] = useState(0.08)
   const mediaRecorderRef = useRef(null)
@@ -35,7 +35,7 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
   const cleanupRecorder = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
     streamRef.current?.getTracks().forEach((track) => track.stop())
-    audioContextRef.current?.close().catch(() => {})
+    audioContextRef.current?.close().catch(() => { })
     mediaRecorderRef.current = null
     streamRef.current = null
     audioContextRef.current = null
@@ -58,7 +58,7 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
     if (!analyser || !recorder || recorder.state === 'inactive') return
 
     const level = averageFrequency(analyser)
-    console.log("Level:",level.toFixed(3))
+    console.log("Level:", level.toFixed(3))
     const now = performance.now()
     setAmplitude(Math.max(0.05, level))
 
@@ -67,23 +67,23 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
       silenceStartedRef.current = null
     }
 
-   if (heardSpeechRef.current && level < 0.07) {
+    if (heardSpeechRef.current && level < 0.07) {
 
-    console.log("Silence detected");
+      console.log("Silence detected");
 
-    silenceStartedRef.current ??= now;
+      silenceStartedRef.current ??= now;
 
-    console.log(now - silenceStartedRef.current);
+      console.log(now - silenceStartedRef.current);
 
-    if (now - silenceStartedRef.current > 700) {
+      if (now - silenceStartedRef.current > 700) {
 
         console.log("Stopping recorder");
 
         stopListening();
 
         return;
+      }
     }
-}
 
     if (now - startedAtRef.current > 24000) {
       stopListening()
@@ -140,21 +140,21 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
           else setPhase('idle')
         } catch (error) {
 
-  console.error("STT ERROR:", error);
+          console.error("STT ERROR:", error);
 
-  if (error.response) {
-    console.log("Response:", error.response.data);
-    console.log("Status:", error.response.status);
-  }
+          if (error.response) {
+            console.log("Response:", error.response.data);
+            console.log("Status:", error.response.status);
+          }
 
-  setPhase('idle');
+          setPhase('idle');
 
-  onNotify(
-    'Speech Recognition Failed',
-    'I could not transcribe that audio.',
-    'error'
-  );
-}
+          onNotify(
+            'Speech Recognition Failed',
+            'I could not transcribe that audio.',
+            'error'
+          );
+        }
       }
 
       recorder.start()
@@ -202,13 +202,17 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
         audio.onplay = animatePlayback
         audio.onended = () => {
           URL.revokeObjectURL(url)
-          context.close().catch(() => {})
+          context.close().catch(() => { })
           setAmplitude(0.08)
           setPhase('idle')
+
+          console.log('🔊 E.V. finished speaking')
+
+          onSpeechEnded?.()
         }
         audio.onerror = () => {
           URL.revokeObjectURL(url)
-          context.close().catch(() => {})
+          context.close().catch(() => { })
           setPhase('idle')
           onNotify('Voice Playback Failed', 'The response is displayed without audio.', 'error')
         }
@@ -219,12 +223,12 @@ export function useVoiceAssistant({ onTranscript, onNotify }) {
         onNotify('Text To Speech Failed', 'The response is displayed without audio.', 'error')
       }
     },
-    [onNotify],
+    [onNotify, onSpeechEnded],
   )
 
   useEffect(() => cleanupRecorder, [cleanupRecorder])
 
-  
+
 
   return {
     phase,
