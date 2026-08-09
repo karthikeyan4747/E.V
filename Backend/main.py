@@ -19,6 +19,10 @@ import subprocess
 import webbrowser
 import json
 from pathlib import Path
+from ctypes import cast, POINTER
+from comtypes import CLSCTX_ALL
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+
 
 cors_origins = [
     origin.strip()
@@ -39,7 +43,7 @@ app.add_middleware(
 
 class ToolRequest(BaseModel):
     action: str
-    value: str = ""
+    value: str | int | float = ""
     url: str = ""
 
 class ChatRequest(BaseModel):
@@ -335,6 +339,98 @@ Open Downloads
 "speech":"Opening Downloads."
 }
 
+--------------------------------------------------
+PLAY SONGS
+--------------------------------------------------
+
+YOUTUBE PLAYBACK
+
+When the user asks to PLAY a song/video on YouTube:
+
+1. Do NOT return a YouTube search results URL.
+2. Find the most likely exact YouTube video for the requested song.
+3. Return the direct YouTube watch URL.
+4. Use the direct video URL with the open_url action.
+
+Example:
+
+User:
+Play New Person Same Old Mistakes by Tame Impala on YouTube.
+
+Return:
+
+{
+  "type": "tool",
+  "tasks": [
+    {
+      "action": "open_url",
+      "url": "https://www.youtube.com/watch?v=_9bw_VtMUGA"
+    }
+  ],
+  "response": "Playing New Person Same Old Mistakes on YouTube.",
+  "speech": "Playing it on YouTube."
+}
+
+NEVER return:
+
+https://www.youtube.com/results?search_query=...
+
+when the user explicitly says "play".
+
+VOLUME CONTROL:
+
+set_volume:
+Use when the user specifies an exact target volume.
+
+Examples:
+"set volume to 50%"
+"make the volume 30%"
+"volume at 80%"
+"set volume to 25"
+
+→ action: set_volume
+→ value: target percentage
+
+volume_up:
+Use when the user wants to increase the current volume.
+
+If the user specifies an amount:
+"increase volume by 5%"
+"turn it up by 20"
+
+→ action: volume_up
+→ value: amount
+
+If no amount is specified:
+"volume up"
+"increase volume"
+"make it louder"
+
+→ action: volume_up
+→ value: 10
+
+volume_down:
+Use when the user wants to decrease the current volume.
+
+If the user specifies an amount:
+"decrease volume by 5%"
+"turn it down by 20"
+
+→ action: volume_down
+→ value: amount
+
+If no amount is specified:
+"volume down"
+"decrease volume"
+"make it quieter"
+
+→ action: volume_down
+→ value: 10
+
+IMPORTANT:
+"Increase volume to 70%" means SET the volume to 70%, NOT increase it by 70%.
+
+"Increase volume by 10%" means increase the CURRENT volume by 10 percentage points.
 --------------------------------------------------
 OPEN WEBSITE EXAMPLES
 --------------------------------------------------
@@ -2145,7 +2241,7 @@ from pathlib import Path
 def tool(request: ToolRequest):
 
     action = request.action.lower()
-    value = request.value.lower()
+    value = str(request.value).lower() if request.value is not None else ""
 
     try:
 
@@ -2206,6 +2302,65 @@ def tool(request: ToolRequest):
                 "message": f"{value} opened."
             }
 
+
+# -----------------------------
+# VOLUME CONTROLS
+# -----------------------------
+        elif action == "set_volume":
+
+            level = set_volume(request.value)
+
+            return {
+                "success": True,
+                "message": f"Volume set to {level}%"
+            }
+
+
+        elif action == "volume_up":
+
+            amount = int(request.value) if request.value else 10
+            level = volume_up(amount)
+
+            return {
+                "success": True,
+                "message": f"Volume increased to {level}%"
+            }
+
+
+        elif action == "volume_down":
+
+            amount = int(request.value) if request.value else 10
+            level = volume_down(amount)
+
+            return {
+                "success": True,
+                "message": f"Volume decreased to {level}%"
+            }
+
+
+        elif action == "mute":
+
+            mute()
+
+            return {
+                "success": True,
+                "message": "Volume muted."
+            }
+
+
+        elif action == "unmute":
+
+            unmute()
+
+            return {
+                "success": True,
+                "message": "Volume unmuted."
+            }
+
+            result = {
+                "success": True,
+                "message": "Volume unmuted."
+            }
         # -----------------------------
         # CLOSE APPLICATION
         # -----------------------------
@@ -2305,18 +2460,66 @@ FRONTEND_DIST = Path(
     )
 )
 
+from pycaw.pycaw import AudioUtilities
+
+
+# -----------------------------
+# WINDOWS VOLUME CONTROL
+# -----------------------------
+
+def get_volume_controller():
+    device = AudioUtilities.GetSpeakers()
+    return device.EndpointVolume
+
+
+def get_volume():
+    volume = get_volume_controller()
+
+    return round(
+        volume.GetMasterVolumeLevelScalar() * 100
+    )
+
+
+def set_volume(level):
+    level = max(0, min(100, int(level)))
+
+    volume = get_volume_controller()
+
+    volume.SetMasterVolumeLevelScalar(
+        level / 100,
+        None
+    )
+
+    return level
+
+
+def volume_up(amount=10):
+    return set_volume(get_volume() + amount)
+
+
+def volume_down(amount=10):
+    return set_volume(get_volume() - amount)
+
+
+def mute():
+    get_volume_controller().SetMute(1, None)
+
+
+def unmute():
+    get_volume_controller().SetMute(0, None)
+
 if FRONTEND_DIST.exists():
     assets_dir = FRONTEND_DIST / "assets"
 
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+if assets_dir.exists():
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
-    @app.get("/", include_in_schema=False)
-    def serve_index():
+@app.get("/", include_in_schema=False)
+def serve_index():
         return FileResponse(FRONTEND_DIST / "index.html")
 
-    @app.get("/{full_path:path}", include_in_schema=False)
-    def serve_frontend(full_path: str):
+@app.get("/{full_path:path}", include_in_schema=False)
+def serve_frontend(full_path: str):
         requested_file = FRONTEND_DIST / full_path
 
         if requested_file.is_file():
