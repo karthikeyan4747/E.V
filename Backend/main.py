@@ -795,7 +795,7 @@ VOICE RULES
 
 The speech field is for text-to-speech only.
 
-Keep it between 2 and 8 words.
+Keep it between 10 and 20 words.
 
 Examples
 

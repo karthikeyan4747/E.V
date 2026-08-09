@@ -6,6 +6,7 @@ from clapDetector import ClapDetector
 import subprocess
 from scipy.io import wavfile
 import os
+import sys
 
 SAMPLE_RATE = 44100
 BUFFER_SIZE = 2048
@@ -151,24 +152,24 @@ def launch_ev():
     play_startup_greeting()
 
     # Start backend
+    
+
     subprocess.Popen(
-    [
-        r"C:\Users\Karthikeyan K\Desktop\EV\Backend\.venv\Scripts\python.exe",
-        "-m",
-        "uvicorn",
-        "main:app",
-        "--reload"
-    ],
-    cwd=BACKEND_DIR,
-    creationflags=subprocess.CREATE_NEW_CONSOLE
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "main:app",
+            "--reload"
+        ],
+        cwd=BACKEND_DIR,
+        creationflags=subprocess.CREATE_NEW_CONSOLE
     )
 
     print("✅ Backend starting...")
-
     
 
     # Give Vite/FastAPI a moment to start
-    time.sleep(4)
 
     # Open E.V.
     print("🌐 E.V. opened")
