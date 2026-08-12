@@ -15,9 +15,8 @@ import { Notifications } from './components/Notifications'
 import { CouncilView } from './components/CouncilView'
 import { ToolOverlay } from './components/ToolOverlay'
 import { useWakeWord } from './hooks/useWakeWord'
-import { WorkflowManager } from './components/WorkflowManager'
 
-const WORKFLOWS_STORAGE_KEY = 'ev-custom-workflows'
+
 
 const initialMessages = [
   {
@@ -40,15 +39,6 @@ function App() {
   const [toolTask, setToolTask] = useState(null)
   const [councilResult, setCouncilResult] = useState(null)
   const [isThinking, setIsThinking] = useState(false)
-  const [workflows, setWorkflows] = useState(() => {
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(WORKFLOWS_STORAGE_KEY) || '[]')
-      return Array.isArray(saved) ? saved.filter((item) => item?.name && item?.target) : []
-    } catch {
-      return []
-    }
-  })
-  const [showWorkflows, setShowWorkflows] = useState(false)
   const playSpeechRef = useRef(async () => { })
 
   //hi
@@ -92,7 +82,7 @@ function App() {
           return
         }
         console.log("Sending request to /chat...");
-        const { data } = await api.post('/chat', { message: cleanText, custom_workflows: workflows })
+        const { data } = await api.post('/chat', { message: cleanText })
         console.log("Chat response:", data);
         if (data.type === 'conversation_mode') {
           setConversationMode(Boolean(data.enabled))
@@ -102,10 +92,6 @@ function App() {
         if (data.type === 'debate') {
           setMode('council')
           notify('Council Mode', 'Council session activated.', 'mode')
-        }
-
-        if (data.type === 'screen') {
-          notify('Screen Vision', 'E.V. inspected the current screen.', data.success ? 'success' : 'error')
         }
 
         if (data.type === 'tool') {
@@ -127,7 +113,7 @@ function App() {
         setIsThinking(false)
       }
     },
-    [addMessage, isThinking, mode, notify, workflows],
+    [addMessage, isThinking, mode, notify],
   )
   const wakeWord = useWakeWord({
     onWake: async () => {
@@ -211,10 +197,6 @@ function App() {
     }
   }, [notify])
 
-  useEffect(() => {
-    window.localStorage.setItem(WORKFLOWS_STORAGE_KEY, JSON.stringify(workflows))
-  }, [workflows])
-
   const voiceState = useMemo(() => {
     if (mode === 'council') return 'council'
     if (toolTask) return 'tool'
@@ -229,7 +211,6 @@ function App() {
 
       <Notifications notifications={notifications} />
       <ToolOverlay task={toolTask} />
-      {showWorkflows && <WorkflowManager workflows={workflows} onSave={setWorkflows} onClose={() => setShowWorkflows(false)} />}
 
       <section className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1720px] flex-col px-4 py-4 sm:px-6 lg:px-8">
         <header className="mb-4 grid gap-3 lg:grid-cols-[1fr_auto]">
@@ -315,7 +296,7 @@ function App() {
                     </p>
                   </div>
                 </HudPanel>
-                <QuickActions onCommand={submitMessage} onOpenWorkflows={() => setShowWorkflows(true)} />
+                <QuickActions onCommand={submitMessage} />
               </aside>
 
               <section className="grid min-h-[680px] gap-4 grid-rows-[1fr_auto]">

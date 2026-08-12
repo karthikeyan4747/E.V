@@ -36,13 +36,37 @@ function CouncilCard({ member, data, delay, isThinking }) {
         {data ? <CheckCircle2 className="h-5 w-5 text-emerald-300" /> : <Brain className="h-5 w-5 animate-pulse" />}
       </div>
       <p className="min-h-[170px] text-sm leading-6 text-slate-300">
-        {data ? stripDecision(data.response) : isThinking ? 'Evaluating the request through a dedicated reasoning profile...' : 'Awaiting council session.'}
+        {data ? (stripDecision(data.response) || 'No response received from this council member.') : isThinking ? 'Evaluating the request through a dedicated reasoning profile...' : 'Awaiting council session.'}
       </p>
       <div className="mt-5 grid grid-cols-2 gap-3 font-mono text-xs uppercase tracking-[0.12em]">
         <span className="rounded border border-white/10 bg-white/5 px-3 py-2 text-slate-400">Vote: {data?.decision?.vote || 'Pending'}</span>
         <span className="rounded border border-white/10 bg-white/5 px-3 py-2 text-slate-400">Confidence: {data?.decision?.confidence || 0}</span>
       </div>
     </motion.article>
+  )
+}
+
+function DebateTranscript({ rounds }) {
+  if (!rounds?.length) return null
+  return (
+    <HudPanel className="max-h-80 overflow-y-auto p-5">
+      <p className="font-mono text-xs uppercase tracking-[0.2em] text-ev-cyan">Three-Round Discussion</p>
+      <div className="mt-4 space-y-5">
+        {rounds.map((round) => (
+          <div key={round.round}>
+            <p className="font-mono text-xs uppercase tracking-[0.16em] text-ev-blue">Round {round.round}</p>
+            <div className="mt-2 grid gap-3 lg:grid-cols-3">
+              {council.map((member) => (
+                <div key={member.key} className="border-l-2 border-ev-blue/40 pl-3 text-sm leading-6 text-slate-300">
+                  <span className="font-mono text-xs uppercase text-ev-cyan">{member.title}</span>
+                  <p className="mt-1">{stripDecision(round.turns?.[member.key]) || 'No response received.'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </HudPanel>
   )
 }
 
@@ -91,6 +115,8 @@ export function CouncilView({
             <CouncilCard key={member.key} member={member} data={result?.[member.key]} delay={index * 0.14} isThinking={isThinking} />
           ))}
         </div>
+
+        <DebateTranscript rounds={result?.rounds} />
 
         <motion.div
           initial={{ opacity: 0, y: 24 }}

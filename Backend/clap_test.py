@@ -134,25 +134,9 @@ def launch_ev():
     print("Starting E.V...")
     print()
 
-    webbrowser.open(FRONTEND_URL)
-
-    # Start frontend
-    subprocess.Popen(
-        [
-                "cmd",
-                "/c",
-                "npm run dev"
-       ],
-            cwd=FRONTEND_DIR,
-            creationflags=subprocess.CREATE_NEW_CONSOLE
-        )
-    
-    print("✅ Frontend starting...")
-
-    play_startup_greeting()
-
-    # Start backend
-    
+    # --------------------------------------------------------
+    # START BACKEND FIRST
+    # --------------------------------------------------------
 
     subprocess.Popen(
         [
@@ -167,12 +151,48 @@ def launch_ev():
     )
 
     print("✅ Backend starting...")
-    
 
-    # Give Vite/FastAPI a moment to start
+    # --------------------------------------------------------
+    # START FRONTEND
+    # --------------------------------------------------------
 
-    # Open E.V.
+    subprocess.Popen(
+        [
+            "cmd",
+            "/c",
+            "npm",
+            "run",
+            "dev"
+        ],
+        cwd=FRONTEND_DIR,
+        creationflags=subprocess.CREATE_NEW_CONSOLE
+    )
+
+    print("✅ Frontend starting...")
+
+    # --------------------------------------------------------
+    # WAIT FOR BOTH
+    # --------------------------------------------------------
+
+    print("⏳ Waiting 3 seconds...")
+
+    time.sleep(3)
+
+    # --------------------------------------------------------
+    # OPEN WEBSITE
+    # --------------------------------------------------------
+
+    webbrowser.open(FRONTEND_URL)
+
     print("🌐 E.V. opened")
+
+    # --------------------------------------------------------
+    # PLAY INTRO
+    # --------------------------------------------------------
+
+    play_startup_greeting()
+
+    print("🔊 E.V. greeting playing...")
 
 def callback(indata, frames, time_info, status):
 

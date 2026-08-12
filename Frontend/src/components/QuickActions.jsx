@@ -1,4 +1,4 @@
-import { Code2, Folder, Globe2, Settings, SquareTerminal } from 'lucide-react'
+import { Code2, Folder, Globe2, Settings, SquareTerminal, Workflow } from 'lucide-react'
 import { HudPanel } from './HudPanel'
 
 const actions = [
@@ -9,7 +9,7 @@ const actions = [
   ['Council', 'Consult the council about improving my workflow', Settings],
 ]
 
-export function QuickActions({ onCommand }) {
+export function QuickActions({ onCommand, onOpenWorkflows }) {
   return (
     <HudPanel className="p-5">
       <h2 className="mb-4 border-b border-ev-blue/25 pb-3 font-mono text-sm uppercase tracking-[0.18em] text-ev-cyan">
@@ -29,6 +29,10 @@ export function QuickActions({ onCommand }) {
             <span>{label}</span>
           </button>
         ))}
+        <button type="button" onClick={onOpenWorkflows} className="quick-action" title="Custom workflows" aria-label="Custom workflows">
+          <Workflow className="h-6 w-6" />
+          <span>Flows</span>
+        </button>
       </div>
     </HudPanel>
   )

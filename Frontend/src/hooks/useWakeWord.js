@@ -44,7 +44,7 @@ export function useWakeWord({ onWake }) {
                         Hey_e_v: 'Hey_e_v.onnx',
                     },
 
-                    detectionThreshold: 0.05,
+                    detectionThreshold: 0.02,
                     cooldownMs: 2000,
                 })
 

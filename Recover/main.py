@@ -7,10 +7,6 @@ import asyncio
 import os
 from fastapi.responses import FileResponse
 import tempfile
-from mss import mss
-from PIL import Image
-import numpy as np
-from rapidocr_onnxruntime import RapidOCR
 app = FastAPI()
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,20 +45,9 @@ class ToolRequest(BaseModel):
     action: str
     value: str | int | float = ""
     url: str = ""
-    target: str = ""
-
-class CustomWorkflow(BaseModel):
-    name: str
-    target: str = ""
-    steps: list["WorkflowStep"] = []
-
-class WorkflowStep(BaseModel):
-    kind: str = "target"
-    value: str
 
 class ChatRequest(BaseModel):
-    message: str
-    custom_workflows: list[CustomWorkflow] = []
+    message:str
 
 class TTSRequest(BaseModel):
     text: str
@@ -72,135 +57,10 @@ CHAT_AI = os.getenv("CHAT_API")
 INNOVATOR_AI = os.getenv("INNOVATOR_API")
 CRITIC_AI = os.getenv("CRITIC_API")
 ARCHITECT_API = os.getenv("ARCHITECT_API")
-SCREEN_ANALYSIS_MODEL = os.getenv("SCREEN_ANALYSIS_MODEL", "openai/gpt-oss-120b")
-SCREEN_OCR = None
 #Chatbot Ai
-
-def read_screen_text(image: Image.Image):
-    global SCREEN_OCR
-    if SCREEN_OCR is None:
-        SCREEN_OCR = RapidOCR()
-    result, _ = SCREEN_OCR(np.array(image))
-    lines = [item[1].strip() for item in (result or []) if len(item) > 1 and item[1].strip()]
-    return "\n".join(lines)
-
-def analyze_screen(question: str):
-    """Capture the primary Windows display only when EV explicitly requests it."""
-    question = str(question or "").strip() or "Look at my screen and tell me what is important."
-
-    try:
-        with mss() as sct:
-            if len(sct.monitors) < 2:
-                raise RuntimeError("No display is available to capture.")
-            shot = sct.grab(sct.monitors[1])
-            image = Image.frombytes("RGB", shot.size, shot.rgb)
-
-        image.thumbnail((2560, 1440), Image.Resampling.LANCZOS)
-        screen_text = read_screen_text(image)
-        if not screen_text:
-            return "I can see the screen, but I couldn't read any text from it. Put the error window in view and try again."
-
-        client = Groq(api_key=CHAT_AI)
-        completion = client.chat.completions.create(
-            model=SCREEN_ANALYSIS_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are E.V. Screen Vision. The user explicitly asked E.V. to inspect their computer screen. You receive text read from the current screen. Pay special attention to terminal errors, compiler errors, browser errors, warnings, and application state. If the user asks what is wrong, identify the likely cause and give a practical fix. If something cannot be determined from the visible text, say so instead of guessing. Be concise and conversational. Return plain text only."""
-                },
-                {
-                    "role": "user",
-                    "content": f"User question: {question}\n\nVisible screen text:\n{screen_text[:12000]}"
-                }
-            ],
-            temperature=0.2,
-            max_completion_tokens=700,
-            reasoning_effort="low",
-        )
-        analysis = (completion.choices[0].message.content or "").strip()
-        if not analysis:
-            raise RuntimeError("The screen analysis returned no details.")
-        return analysis
-    except Exception as exc:
-        raise RuntimeError("I couldn't inspect the screen right now. Make sure the error window is visible and try again.") from exc
-
-
-def get_custom_workflows(workflows: list[CustomWorkflow]):
-    """Keep only small, well-formed user-defined shortcuts for this request."""
-    cleaned = []
-    seen = set()
-    for workflow in workflows[:30]:
-        name = workflow.name.strip()
-        steps = []
-        for step in workflow.steps[:12]:
-            kind = step.kind.strip().lower()
-            value = step.value.strip()
-            if kind in {"target", "app"} and value and len(value) <= 2048:
-                steps.append({"kind": kind, "value": value})
-        if not steps and workflow.target.strip():
-            steps.append({"kind": "target", "value": workflow.target.strip()})
-        key = name.casefold()
-        if not name or not steps or len(name) > 64 or key in seen:
-            continue
-        seen.add(key)
-        cleaned.append({"name": name, "steps": steps})
-    return cleaned
-
-
-def find_custom_workflow(message: str, workflows):
-    if not re.search(r"\b(open|launch|start|activate|go to)\b", message, re.IGNORECASE):
-        return None
-    for workflow in workflows:
-        if re.search(rf"(?<!\w){re.escape(workflow['name'])}(?!\w)", message, re.IGNORECASE):
-            return workflow
-    return None
-
-
-def custom_workflow_context(workflows):
-    if not workflows:
-        return ""
-    entries = "; ".join(f"{item['name']} -> {', '.join(step['value'] for step in item['steps'])}" for item in workflows)
-    return (
-        "\nCUSTOM WORKFLOWS\n"
-        f"The user has defined these named shortcuts: {entries}.\n"
-        "When explicitly asked to open one, return a tool task with action open_custom_workflow and its exact name in value.\n"
-    )
-
-
-def run_custom_workflow(workflow):
-    results = []
-    tasks = []
-    for step in workflow["steps"]:
-        if step["kind"] == "app":
-            action = "open_application"
-            request = ToolRequest(action=action, value=step["value"])
-        else:
-            action = "open_custom_workflow"
-            request = ToolRequest(action=action, value=workflow["name"], target=step["value"])
-        tasks.append({"action": action, "value": step["value"]})
-        results.append(tool(request))
-    success = all(result.get("success", False) for result in results)
-    return {
-        "success": success,
-        "tasks": tasks,
-        "message": f"Opening {workflow['name']}." if success else f"I couldn't complete every part of {workflow['name']}.",
-    }
-
 
 @app.post('/chat')
 def chat(request:ChatRequest):
-    workflows = get_custom_workflows(request.custom_workflows)
-    matched_workflow = find_custom_workflow(request.message, workflows)
-    if matched_workflow:
-        result = run_custom_workflow(matched_workflow)
-        return {
-            "type": "tool",
-            "tasks": result["tasks"],
-            "response": result["message"],
-            "speech": f"Opening {matched_workflow['name']}.",
-            "success": result["success"],
-        }
-
     client = Groq(api_key=CHAT_AI)
     completion = client.chat.completions.create(
     model="openai/gpt-oss-120b",
@@ -326,8 +186,6 @@ close_application
 open_folder
 
 open_url
-
-screen_analysis
 
 --------------------------------------------------
 FIELD RULES
@@ -573,28 +431,6 @@ IMPORTANT:
 "Increase volume to 70%" means SET the volume to 70%, NOT increase it by 70%.
 
 "Increase volume by 10%" means increase the CURRENT volume by 10 percentage points.
---------------------------------------------------
-SCREEN VISION
---------------------------------------------------
-
-screen_analysis
-
-Use when the user explicitly asks E.V. to look at, inspect, analyze, diagnose, or explain something on the computer screen. Pass the user's request in the value field.
-
-Examples
-
-User
-Look at my screen
-
-Return a TOOL response with action screen_analysis and value containing the user's request.
-
-User
-What's wrong on my screen?
-
-Return a screen_analysis task with the user's request as value.
-
-IMPORTANT: Only use screen_analysis when the user explicitly asks E.V. to inspect or see the screen. Never capture the screen for an unrelated request.
-
 --------------------------------------------------
 OPEN WEBSITE EXAMPLES
 --------------------------------------------------
@@ -1151,7 +987,6 @@ Be dependable.
 Never break character.
 
 Always return exactly one valid JSON object matching one of the four formats above.'''
-        + custom_workflow_context(workflows)
         },
       {
         "role": "user",
@@ -1173,33 +1008,23 @@ Always return exactly one valid JSON object matching one of the four formats abo
             results = []
 
             for task in data["tasks"]:
-                result = tool(
+
+                 result = tool(
                     ToolRequest(
                         action=task["action"],
                         value=task.get("value", ""),
-                        url=task.get("url", ""),
-                        target=""
+                        url=task.get("url", "")
                     )
-                )
-                results.append(result)
+            )
 
-            screen_result = next((result for task, result in zip(data["tasks"], results) if task.get("action") == "screen_analysis"), None)
-
-            if screen_result:
-                return {
-                    "type": "screen",
-                    "tasks": data["tasks"],
-                    "response": screen_result.get("analysis") or screen_result.get("message", "I couldn't inspect the screen."),
-                    "speech": "I've checked your screen." if screen_result.get("success") else "I couldn't inspect the screen.",
-                    "success": screen_result.get("success", False)
-                }
+            results.append(result)
 
             return {
                 "type": "tool",
                 "tasks": data["tasks"],
                 "response": data["response"],
                 "speech": data["speech"],
-                "success": all(r.get("success", False) for r in results)
+                "success": all(r["success"] for r in results)
             }
 
         elif data["type"] == "debate":
@@ -2275,97 +2100,51 @@ Innovator:
             "speech":"I've reached a decision."
         }
 
-COUNCIL_MEMBERS = {
-    "architect": {
-        "name": "Architect",
-        "api_key": ARCHITECT_API,
-        "focus": "technical feasibility, simple architecture, maintainability, and implementation trade-offs",
-    },
-    "critic": {
-        "name": "Critic",
-        "api_key": CRITIC_AI,
-        "focus": "failure cases, security, hidden assumptions, and concrete safeguards",
-    },
-    "innovator": {
-        "name": "Innovator",
-        "api_key": INNOVATOR_AI,
-        "focus": "user experience, useful automation, and practical alternative approaches",
-    },
-}
-
-
-def council_turn(member_key: str, question: str, transcript: str, round_number: int):
-    member = COUNCIL_MEMBERS[member_key]
-    final_round = round_number == 3
-    final_instruction = """
-End with this exact short block:
-<decision>
-Vote: APPROVE | APPROVE_WITH_CHANGES | REJECT
-Confidence: 0-100
-Reason: one concise sentence
-</decision>""" if final_round else "Do not give a final verdict yet."
-    prompt = f"""You are {member['name']} in a three-person engineering council. Your focus is {member['focus']}.
-This is round {round_number} of 3. Speak directly to the other two members, reacting to their actual points when a transcript is provided. Disagree only with a specific reason, improve at least one idea, and keep the reply between 35 and 70 words. Never return only a decision block. Plain text only. {final_instruction}
-
-User's topic: {question}
-
-Discussion so far:
-{transcript or 'No previous turns. State your initial position briefly.'}"""
-    client = Groq(api_key=member["api_key"])
-    completion = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-        max_completion_tokens=640,
-        reasoning_effort="low",
-    )
-    response = (completion.choices[0].message.content or "").strip()
-    visible_response = re.sub(r"<decision>[\s\S]*?</decision>", "", response).strip()
-    if not visible_response:
-        raise RuntimeError("The council member returned an empty response.")
-    return response
-
-
-def safe_council_turn(member_key: str, question: str, transcript: str, round_number: int):
-    try:
-        return council_turn(member_key, question, transcript, round_number)
-    except Exception as exc:
-        try:
-            return council_turn(member_key, question, transcript, round_number)
-        except Exception:
-            member = COUNCIL_MEMBERS[member_key]["name"]
-            return f"{member} could not contribute in round {round_number}. The remaining council members should continue without this input."
-
-
 @app.post("/debate")
 async def debate(request: ChatRequest):
-    rounds = []
-    transcript = ""
 
-    for round_number in range(1, 4):
-        turns = await asyncio.gather(*[
-            run_in_threadpool(safe_council_turn, member_key, request.message, transcript, round_number)
-            for member_key in COUNCIL_MEMBERS
-        ])
-        round_data = dict(zip(COUNCIL_MEMBERS.keys(), turns))
-        rounds.append({"round": round_number, "turns": round_data})
-        transcript += ("\n\n" if transcript else "") + "\n\n".join(
-            f"{COUNCIL_MEMBERS[member_key]['name']}: {response}"
-            for member_key, response in round_data.items()
-        )
+    architect_task = run_in_threadpool(architect, request)
+    critic_task = run_in_threadpool(critic, request)
+    innovator_task = run_in_threadpool(innovator, request)
 
-    final_turns = rounds[-1]["turns"]
-    architect_response = final_turns["architect"]
-    critic_response = final_turns["critic"]
-    innovator_response = final_turns["innovator"]
-    ev = ev_decision(request.message, architect_response, critic_response, innovator_response)
+    architect_result, critic_result, innovator_result = await asyncio.gather(
+        architect_task,
+        critic_task,
+        innovator_task
+    )
+
+    architect_response = architect_result["response"]
+    critic_response = critic_result["response"]
+    innovator_response = innovator_result["response"]
+
+    architect_decision = extract_decision(architect_response)
+    critic_decision = extract_decision(critic_response)
+    innovator_decision = extract_decision(innovator_response)
+
+    ev = ev_decision(
+        request.message,
+        architect_response,
+        critic_response,
+        innovator_response
+    )
 
     return {
-        "rounds": rounds,
-        "architect": {"response": architect_response, "decision": extract_decision(architect_response)},
-        "critic": {"response": critic_response, "decision": extract_decision(critic_response)},
-        "innovator": {"response": innovator_response, "decision": extract_decision(innovator_response)},
-        "ev": ev,
+        "architect": {
+            "response": architect_response,
+            "decision": architect_decision
+        },
+
+        "critic": {
+            "response": critic_response,
+            "decision": critic_decision
+        },
+
+        "innovator": {
+            "response": innovator_response,
+            "decision": innovator_decision
+        },
+
+        "ev": ev
     }
 
 def extract_decision(text):
@@ -2480,33 +2259,6 @@ def tool(request: ToolRequest):
             }
 
         # -----------------------------
-        # OPEN CUSTOM WORKFLOW
-        # -----------------------------
-        elif action == "open_custom_workflow":
-            target = request.target.strip()
-            if not target:
-                return {
-                    "success": False,
-                    "message": "That custom workflow no longer has a destination."
-                }
-
-            if re.match(r"^https?://", target, re.IGNORECASE):
-                webbrowser.open(target)
-            else:
-                path = Path(target).expanduser()
-                if not path.exists():
-                    return {
-                        "success": False,
-                        "message": f"I couldn't find {request.value} at the saved location."
-                    }
-                os.startfile(str(path))
-
-            return {
-                "success": True,
-                "message": f"Opening {request.value}."
-            }
-
-        # -----------------------------
         # OPEN APPLICATION
         # -----------------------------
         elif action == "open_application":
@@ -2609,24 +2361,6 @@ def tool(request: ToolRequest):
                 "success": True,
                 "message": "Volume unmuted."
             }
-        # -----------------------------
-        # SCREEN VISION
-        # -----------------------------
-        elif action == "screen_analysis":
-            try:
-                analysis = analyze_screen(str(request.value))
-                return {
-                    "success": True,
-                    "message": "Screen analyzed.",
-                    "analysis": analysis
-                }
-            except Exception as exc:
-                return {
-                    "success": False,
-                    "message": str(exc),
-                    "analysis": str(exc)
-                }
-
         # -----------------------------
         # CLOSE APPLICATION
         # -----------------------------

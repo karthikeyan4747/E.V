@@ -3,3 +3,6 @@ groq>=0.13.0
 python-dotenv>=1.0.1
 python-multipart>=0.0.12
 uvicorn[standard]>=0.30.0
+mss>=10.0.0
+Pillow>=10.0.0
+rapidocr-onnxruntime>=1.2.3
