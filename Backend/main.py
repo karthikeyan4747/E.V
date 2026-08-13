@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.concurrency import run_in_threadpool
 import re
 from collections import Counter
+from difflib import SequenceMatcher
 from fastapi import UploadFile, File
 import subprocess
 import webbrowser
@@ -135,7 +136,7 @@ def get_custom_workflows(workflows: list[CustomWorkflow]):
         for step in workflow.steps[:12]:
             kind = step.kind.strip().lower()
             value = step.value.strip()
-            if kind in {"target", "app"} and value and len(value) <= 2048:
+            if kind in {"target", "app","vscode"} and value and len(value) <= 2048:
                 steps.append({"kind": kind, "value": value})
         if not steps and workflow.target.strip():
             steps.append({"kind": "target", "value": workflow.target.strip()})
@@ -147,12 +148,27 @@ def get_custom_workflows(workflows: list[CustomWorkflow]):
     return cleaned
 
 
+def normalize_workflow_name(value: str):
+    return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
+
+
 def find_custom_workflow(message: str, workflows):
     if not re.search(r"\b(open|launch|start|activate|go to)\b", message, re.IGNORECASE):
         return None
+
+    normalized_message = normalize_workflow_name(message)
+
     for workflow in workflows:
-        if re.search(rf"(?<!\w){re.escape(workflow['name'])}(?!\w)", message, re.IGNORECASE):
+        workflow_name = normalize_workflow_name(workflow["name"])
+        if not workflow_name:
+            continue
+
+        if workflow_name in normalized_message:
             return workflow
+
+        if all(token in normalized_message.split() for token in workflow_name.split()):
+            return workflow
+
     return None
 
 
@@ -163,7 +179,10 @@ def custom_workflow_context(workflows):
     return (
         "\nCUSTOM WORKFLOWS\n"
         f"The user has defined these named shortcuts: {entries}.\n"
-        "When explicitly asked to open one, return a tool task with action open_custom_workflow and its exact name in value.\n"
+        "When explicitly asked to open one, use the workflow's configured step type. "
+        "For a vscode step, use action open_vscode. "
+        "For an app step, use action open_application. "
+        "For other steps, use action open_custom_workflow.\n"
     )
 
 
@@ -174,6 +193,13 @@ def run_custom_workflow(workflow):
         if step["kind"] == "app":
             action = "open_application"
             request = ToolRequest(action=action, value=step["value"])
+        elif step["kind"] == "vscode":
+            action = "open_vscode"
+            request = ToolRequest(
+                    action=action,
+                    value=workflow["name"],
+                    target=step["value"]
+                )
         else:
             action = "open_custom_workflow"
             request = ToolRequest(action=action, value=workflow["name"], target=step["value"])
@@ -815,6 +841,18 @@ Open coding setup
 "speech":"Coding setup ready."
 }
 
+When the user asks to open a named coding project or development project,
+use action "open_vscode" with the exact custom workflow name as "value".
+Do NOT use "open_application" with vscode for named projects.
+
+Example:
+"Open EV project"
+→ action: open_vscode
+→ value: "EV project"
+
+"Open VS Code"
+→ action: open_application
+→ value: "vscode"
 --------------------------------
 
 User
@@ -1178,7 +1216,7 @@ Always return exactly one valid JSON object matching one of the four formats abo
                         action=task["action"],
                         value=task.get("value", ""),
                         url=task.get("url", ""),
-                        target=""
+                        target=task.get("target", "")
                     )
                 )
                 results.append(result)
@@ -2482,8 +2520,58 @@ def tool(request: ToolRequest):
         # -----------------------------
         # OPEN CUSTOM WORKFLOW
         # -----------------------------
+        elif action == "open_vscode":
+            target = (request.target or "").strip()
+
+            if not target and request.value:
+                candidates = []
+                raw_value = str(request.value).strip()
+                normalized = raw_value.strip("\"'")
+
+                for base in [
+                    Path(normalized),
+                    Path(normalized).expanduser(),
+                    Path.home() / normalized,
+                    Path.home() / "Desktop" / normalized,
+                    Path.cwd() / normalized,
+                    Path.cwd().parent / normalized,
+                ]:
+                    if str(base) not in {str(p) for p in candidates}:
+                        candidates.append(base)
+
+                for candidate in candidates:
+                    if candidate.exists():
+                        target = str(candidate)
+                        break
+
+            if not target:
+                return {
+                    "success": False,
+                    "message": "That project no longer has a saved location."
+                }
+
+            path = Path(target).expanduser()
+
+            if not path.exists():
+                return {
+                    "success": False,
+                    "message": f"I couldn't find {request.value} at the saved location."
+                }
+
+            subprocess.Popen([
+                r"C:\Users\Karthikeyan K\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+                str(path)
+            ])
+
+            return {
+                "success": True,
+                "message": f"Opening {request.value} in VS Code."
+            }
+
+
         elif action == "open_custom_workflow":
-            target = request.target.strip()
+            target = (request.target or "").strip()
+
             if not target:
                 return {
                     "success": False,
@@ -2492,14 +2580,40 @@ def tool(request: ToolRequest):
 
             if re.match(r"^https?://", target, re.IGNORECASE):
                 webbrowser.open(target)
-            else:
-                path = Path(target).expanduser()
-                if not path.exists():
-                    return {
-                        "success": False,
-                        "message": f"I couldn't find {request.value} at the saved location."
-                    }
-                os.startfile(str(path))
+                return {
+                    "success": True,
+                    "message": f"Opening {request.value}."
+                }
+
+            path = Path(target).expanduser()
+
+            if not path.exists():
+                return {
+                    "success": False,
+                    "message": f"I couldn't find {request.value} at the saved location."
+                }
+
+            if path.is_dir():
+                subprocess.Popen([
+                    r"C:\Users\Karthikeyan K\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+                    str(path)
+                ])
+                return {
+                    "success": True,
+                    "message": f"Opening {request.value} in VS Code."
+                }
+
+            if path.is_file():
+                subprocess.Popen([
+                    r"C:\Users\Karthikeyan K\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+                    str(path)
+                ])
+                return {
+                    "success": True,
+                    "message": f"Opening {request.value} in VS Code."
+                }
+
+            os.startfile(str(path))
 
             return {
                 "success": True,
@@ -2550,7 +2664,7 @@ def tool(request: ToolRequest):
                 "message": f"{value} opened."
             }
 
-
+        
 # -----------------------------
 # VOLUME CONTROLS
 # -----------------------------
