@@ -1,0 +1,9 @@
+# Define a variable for age
+age = 18
+
+# Check the condition
+if age >= 16:
+    print("You are old enough to drive!")
+else:
+    print("You are too young to drive.")
+ 

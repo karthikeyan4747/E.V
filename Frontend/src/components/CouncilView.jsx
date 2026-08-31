@@ -1,139 +1,215 @@
-import { motion } from 'framer-motion'
-import { ArrowLeft, Brain, CheckCircle2, Compass, Lightbulb, ShieldAlert } from 'lucide-react'
-import { HudPanel } from './HudPanel'
-import { VoiceOrb } from './VoiceOrb'
-import { InputDock } from './InputDock'
+import React, { useState, useEffect } from 'react'
+import { 
+  Users, 
+  Sparkles, 
+  Send, 
+  ShieldAlert, 
+  Compass, 
+  Lightbulb, 
+  Bot,
+  RotateCcw,
+  Cpu,
+  Loader2,
+  Copy,
+  Check,
+  Zap
+} from 'lucide-react'
+import { sovereignAPI } from '../services/api'
 
-const council = [
-  { key: 'architect', title: 'Architect', icon: Compass, tone: 'architect' },
-  { key: 'critic', title: 'Critic', icon: ShieldAlert, tone: 'critic' },
-  { key: 'innovator', title: 'Innovator', icon: Lightbulb, tone: 'innovator' },
-]
+export function CouncilView({ onSetInferencing }) {
+  const [topic, setTopic] = useState('')
+  const [isDebating, setIsDebating] = useState(false)
+  const [debateResult, setDebateResult] = useState(null)
+  const [elapsed, setElapsed] = useState(0)
+  const [copied, setCopied] = useState(false)
 
-function stripDecision(text = '') {
-  return text.replace(/<decision>[\s\S]*?<\/decision>/g, '').trim()
-}
+  useEffect(() => {
+    let interval = null
+    if (isDebating) {
+      setElapsed(0)
+      interval = setInterval(() => setElapsed(prev => prev + 1), 1000)
+    } else {
+      clearInterval(interval)
+    }
+    return () => clearInterval(interval)
+  }, [isDebating])
 
-function CouncilCard({ member, data, delay, isThinking }) {
-  const Icon = member.icon
+  const handleRunDebate = async (e) => {
+    if (e) e.preventDefault()
+    if (!topic.trim() || isDebating) return
+
+    setIsDebating(true)
+    setDebateResult(null)
+    if (onSetInferencing) onSetInferencing(true, 'Council Tri-Persona Reasoning...')
+
+    try {
+      const data = await sovereignAPI.runDebate(topic)
+      setDebateResult(data)
+    } catch (err) {
+      console.error(err)
+      alert(err.response?.data?.detail || err.message || 'Council debate failed')
+    } finally {
+      setIsDebating(false)
+      if (onSetInferencing) onSetInferencing(false)
+    }
+  }
+
+  const handleCopyConsensus = () => {
+    if (debateResult?.ev?.response) {
+      navigator.clipboard.writeText(debateResult.ev.response)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
   return (
-    <motion.article
-      initial={{ opacity: 0, y: 28, filter: 'blur(10px)' }}
-      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      transition={{ duration: 0.42, delay }}
-      className={`council-card ${member.tone}`}
-    >
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="council-icon">
-            <Icon className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.18em]">{member.title}</p>
-            <h3 className="font-display text-xl text-slate-100">Analysis Node</h3>
-          </div>
-        </div>
-        {data ? <CheckCircle2 className="h-5 w-5 text-emerald-300" /> : <Brain className="h-5 w-5 animate-pulse" />}
-      </div>
-      <p className="min-h-[170px] text-sm leading-6 text-slate-300">
-        {data ? (stripDecision(data.response) || 'No response received from this council member.') : isThinking ? 'Evaluating the request through a dedicated reasoning profile...' : 'Awaiting council session.'}
-      </p>
-      <div className="mt-5 grid grid-cols-2 gap-3 font-mono text-xs uppercase tracking-[0.12em]">
-        <span className="rounded border border-white/10 bg-white/5 px-3 py-2 text-slate-400">Vote: {data?.decision?.vote || 'Pending'}</span>
-        <span className="rounded border border-white/10 bg-white/5 px-3 py-2 text-slate-400">Confidence: {data?.decision?.confidence || 0}</span>
-      </div>
-    </motion.article>
-  )
-}
-
-function DebateTranscript({ rounds }) {
-  if (!rounds?.length) return null
-  return (
-    <HudPanel className="max-h-80 overflow-y-auto p-5">
-      <p className="font-mono text-xs uppercase tracking-[0.2em] text-ev-cyan">Three-Round Discussion</p>
-      <div className="mt-4 space-y-5">
-        {rounds.map((round) => (
-          <div key={round.round}>
-            <p className="font-mono text-xs uppercase tracking-[0.16em] text-ev-blue">Round {round.round}</p>
-            <div className="mt-2 grid gap-3 lg:grid-cols-3">
-              {council.map((member) => (
-                <div key={member.key} className="border-l-2 border-ev-blue/40 pl-3 text-sm leading-6 text-slate-300">
-                  <span className="font-mono text-xs uppercase text-ev-cyan">{member.title}</span>
-                  <p className="mt-1">{stripDecision(round.turns?.[member.key]) || 'No response received.'}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </HudPanel>
-  )
-}
-
-export function CouncilView({
-    result,
-    isThinking,
-    onReturn,
-    onAsk,
-    voiceState,
-    amplitude,
-    onMic,
-    isListening,
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 1.04 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      transition={{ duration: 0.42 }}
-      className="grid flex-1 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]"
-    >
-      <aside className="grid content-start gap-4">
-        <HudPanel className="p-5">
-          <button type="button" onClick={onReturn} className="mb-5 flex items-center gap-2 font-mono text-sm uppercase tracking-[0.16em] text-ev-cyan transition hover:text-white">
-            <ArrowLeft className="h-4 w-4" />
-            Return
-          </button>
-          <VoiceOrb state={voiceState} amplitude={amplitude} onClick={onMic}  isListening={isListening} />
-          <p className="mt-5 text-center font-mono text-xs uppercase tracking-[0.18em] text-slate-500">Council Session</p>
-        </HudPanel>
-      </aside>
-
-      <section className="grid min-h-0 gap-4 grid-rows-[auto_1fr_auto]">
-        <HudPanel className="clipped p-6">
-          <p className="font-mono text-xs uppercase tracking-[0.24em] text-ev-cyan">Council Mode</p>
-          <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <h2 className="font-display text-4xl text-slate-100">Strategic Analysis Active</h2>
-            <span className="font-mono text-xs uppercase tracking-[0.18em] text-ev-blue">
-              {result ? 'Council Session Complete' : 'Nodes Synchronizing'}
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#0a0e17]">
+      {/* Top Banner */}
+      <div className="p-4 border-b border-slate-800/80 flex items-center justify-between bg-[#0e1424]/40">
+        <div>
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-sky-400" />
+            <h1 className="text-base font-semibold font-display text-white">Sovereign Council Debate</h1>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              TRI-PERSONA REASONING
             </span>
           </div>
-        </HudPanel>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          {council.map((member, index) => (
-            <CouncilCard key={member.key} member={member} data={result?.[member.key]} delay={index * 0.14} isThinking={isThinking} />
-          ))}
+          <p className="text-xs text-slate-400 mt-0.5">
+            Architect, Critic, and Innovator local models debate industrial proposals and synthesize an executive directive.
+          </p>
         </div>
 
-        <DebateTranscript rounds={result?.rounds} />
+        <div className="flex items-center gap-2">
+          {isDebating && (
+            <div className="flex items-center gap-2 px-3 py-1 rounded bg-purple-950/80 border border-purple-500/40 text-xs font-mono text-purple-300">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+              <span>Deliberating ({elapsed}s)</span>
+            </div>
+          )}
+          <button
+            onClick={() => {
+              setTopic('Replace CDU overhead reflux pump with variable frequency drive (VFD) canned motor pump under high H2S service.')
+            }}
+            className="px-2.5 py-1 text-xs font-mono rounded bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 transition flex items-center gap-1"
+          >
+            <Zap className="w-3 h-3 text-amber-400" />
+            <span>Load Sample Proposal</span>
+          </button>
+        </div>
+      </div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: result ? 1 : 0.55, y: 0 }}
-          transition={{ delay: 0.45 }}
-          className="grid gap-4 lg:grid-cols-[1fr_420px]"
-        >
-          <HudPanel className="ev-decision clipped p-6">
-            <p className="font-mono text-xs uppercase tracking-[0.22em] text-ev-cyan">Final E.V. Recommendation</p>
-            <h3 className="mt-2 font-display text-3xl text-white">{result?.ev?.selected || 'Awaiting Decision'}</h3>
-            <p className="mt-4 leading-7 text-slate-300">
-              {result?.ev?.response || 'The final recommendation will appear here after all council nodes finish their analysis.'}
+      {/* Input Form */}
+      <div className="p-4 border-b border-slate-800 bg-[#0d111c]/60">
+        <form onSubmit={handleRunDebate} className="flex gap-2">
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="Enter engineering proposal or operational dilemma for council debate..."
+            className="flex-1 px-3 py-2 text-xs font-mono rounded bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-purple-500"
+          />
+          <button
+            type="submit"
+            disabled={isDebating || !topic.trim()}
+            className={`px-4 py-2 rounded font-medium text-xs flex items-center gap-2 transition ${
+              isDebating || !topic.trim()
+                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                : 'bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-500/20'
+            }`}
+          >
+            {isDebating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            <span>{isDebating ? 'Convening...' : 'Assemble Council'}</span>
+          </button>
+        </form>
+      </div>
+
+      {/* Active Running Phase Banner */}
+      {isDebating && (
+        <div className="p-3 mx-4 mt-3 rounded-lg bg-purple-950/40 border border-purple-500/30 flex items-center gap-3 animate-pulse">
+          <Loader2 className="w-5 h-5 text-purple-400 animate-spin shrink-0" />
+          <div>
+            <div className="text-xs font-semibold text-purple-200">
+              Council Tri-Persona Reasoning Active...
+            </div>
+            <div className="text-[10px] text-purple-400/80 font-mono">
+              The Architect, Risk Critic, and Innovator are synthesizing consensus on local GPU ({elapsed}s)
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debate Output Grid */}
+      <div className="flex-1 p-4 overflow-y-auto">
+        {debateResult ? (
+          <div className="space-y-4 max-w-6xl mx-auto">
+            {/* 3 Personas Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              {/* Architect */}
+              <div className="p-3.5 rounded-xl codex-panel border-sky-500/30 bg-sky-950/10 flex flex-col">
+                <div className="flex items-center gap-2 mb-2.5 pb-2 border-b border-slate-800">
+                  <Compass className="w-4 h-4 text-sky-400" />
+                  <span className="text-xs font-bold text-sky-300 font-mono">The Architect</span>
+                </div>
+                <div className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-wrap flex-1">
+                  {debateResult.architect?.analysis}
+                </div>
+              </div>
+
+              {/* Critic */}
+              <div className="p-3.5 rounded-xl codex-panel border-red-500/30 bg-red-950/10 flex flex-col">
+                <div className="flex items-center gap-2 mb-2.5 pb-2 border-b border-slate-800">
+                  <ShieldAlert className="w-4 h-4 text-red-400" />
+                  <span className="text-xs font-bold text-red-300 font-mono">The Risk Critic</span>
+                </div>
+                <div className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-wrap flex-1">
+                  {debateResult.critic?.critique}
+                </div>
+              </div>
+
+              {/* Innovator */}
+              <div className="p-3.5 rounded-xl codex-panel border-amber-500/30 bg-amber-950/10 flex flex-col">
+                <div className="flex items-center gap-2 mb-2.5 pb-2 border-b border-slate-800">
+                  <Lightbulb className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold text-amber-300 font-mono">The Innovator</span>
+                </div>
+                <div className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-wrap flex-1">
+                  {debateResult.innovator?.innovations}
+                </div>
+              </div>
+            </div>
+
+            {/* EV Consensus Directive */}
+            <div className="p-4 rounded-xl codex-panel border-emerald-500/40 bg-emerald-950/15 shadow-xl">
+              <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Bot className="w-5 h-5 text-emerald-400" />
+                  <span className="text-xs font-bold text-emerald-300 font-mono uppercase tracking-wider">
+                    Sovereign Consensus & Executive Directive
+                  </span>
+                </div>
+                <button
+                  onClick={handleCopyConsensus}
+                  className="flex items-center gap-1 text-[11px] font-mono text-emerald-400 hover:text-emerald-300 px-2 py-0.5 rounded bg-emerald-950 border border-emerald-500/30 transition"
+                >
+                  {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copied ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+              <div className="text-xs text-slate-200 font-sans leading-relaxed whitespace-pre-wrap">
+                {debateResult.ev?.response}
+              </div>
+            </div>
+          </div>
+        ) : !isDebating ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-600">
+            <Users className="w-12 h-12 text-slate-800 mb-2 stroke-1" />
+            <p className="text-xs text-slate-500">Council Inactive</p>
+            <p className="text-[10px] text-slate-600 max-w-xs mt-1">
+              Submit a technical proposal or dilemma above to start the multi-agent deliberation.
             </p>
-          </HudPanel>
-          <InputDock disabled={isThinking} onSubmit={onAsk} onMic={onMic} isListening={isListening} />
-        </motion.div>
-      </section>
-    </motion.div>
+          </div>
+        ) : null}
+      </div>
+    </div>
   )
 }
