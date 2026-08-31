@@ -47,7 +47,8 @@ class DeliverablesEngine:
         self,
         dna: dict[str, Any],
         params: dict[str, Any],
-        custom_content: Optional[str] = None
+        custom_content: Optional[str] = None,
+        doc_data: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
         """Generate a formal PSU / Refinery / Defense style Word Approval Note (.docx)."""
         file_id = str(uuid.uuid4())[:8]
@@ -94,70 +95,68 @@ class DeliverablesEngine:
         doc.add_paragraph() # Spacing
         
         # Document Title
+        title_text = params.get("title") or dna.get("identity") or "Executive Technical Assessment & Note"
         title_p = doc.add_paragraph()
         title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        title_run = title_p.add_run(f"EXECUTIVE APPROVAL NOTE & TECHNICAL ASSESSMENT\n{dna.get('identity', 'Industrial Assessment').upper()}")
+        title_run = title_p.add_run(f"EXECUTIVE APPROVAL NOTE & TECHNICAL ASSESSMENT\n{str(title_text).upper()}")
         title_run.font.bold = True
-        title_run.font.size = Pt(15)
+        title_run.font.size = Pt(14)
         title_run.font.color.rgb = RGBColor(15, 23, 42)
         
         # Metadata Block Table
         meta_table = doc.add_table(rows=4, cols=2)
         meta_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         rows_data = [
-            ("Target Audience", params.get("target_audience", "Executives & Board Members")),
-            ("Communication Objective", params.get("objective", "Formal Briefing & Approval")),
-            ("Source Material", dna.get("source_name", "Technical Documentation")),
-            ("Tone / Content Style", f"{params.get('tone', 'Formal')} / {params.get('style', 'PSU Standard')}")
+            ("Target Audience", params.get("target_audience", "Executives & Technical Review Board")),
+            ("Communication Objective", params.get("objective", "Formal Briefing & Decision Approval")),
+            ("Subject / Scope", str(title_text)),
+            ("Compliance & Security", "Air-Gapped Sovereign On-Premises Execution")
         ]
         for idx, (label, val) in enumerate(rows_data):
             cell_lbl = meta_table.cell(idx, 0)
             cell_val = meta_table.cell(idx, 1)
             cell_lbl.text = label
             cell_lbl.paragraphs[0].runs[0].font.bold = True
-            cell_lbl.paragraphs[0].runs[0].font.size = Pt(10)
+            cell_lbl.paragraphs[0].runs[0].font.size = Pt(9.5)
             set_cell_background(cell_lbl, "F1F5F9")
             cell_val.text = str(val)
-            cell_val.paragraphs[0].runs[0].font.size = Pt(10)
+            cell_val.paragraphs[0].runs[0].font.size = Pt(9.5)
             set_cell_background(cell_val, "FAFAFA")
-            set_cell_margins(cell_lbl, 80, 80, 100, 100)
-            set_cell_margins(cell_val, 80, 80, 100, 100)
+            set_cell_margins(cell_lbl, 60, 60, 100, 100)
+            set_cell_margins(cell_val, 60, 60, 100, 100)
             
         doc.add_paragraph()
         
         # 1. Executive Summary & Overview
         h1 = doc.add_heading("1. Executive Summary & Context", level=1)
         h1.runs[0].font.color.rgb = RGBColor(15, 23, 42)
-        p_overview = doc.add_paragraph(dna.get("overview", "Comprehensive overview of the subject matter."))
+        overview_text = (doc_data.get("overview") if doc_data else None) or dna.get("overview") or custom_content or f"Comprehensive technical briefing and assessment prepared for {title_text}."
+        p_overview = doc.add_paragraph(overview_text)
         p_overview.runs[0].font.size = Pt(10.5)
         
         # If custom generated content exists, add it
-        if custom_content:
+        if custom_content and custom_content != overview_text:
             doc.add_heading("2. Detailed Strategic Assessment", level=1)
             p_custom = doc.add_paragraph(custom_content)
             p_custom.runs[0].font.size = Pt(10.5)
 
-        # 3. Key Extracted Claims & Factual Findings
-        doc.add_heading("3. Key Findings & Extracted Claims", level=1)
-        claims = dna.get("claims", [])
-        findings = dna.get("key_findings", [])
-        all_findings = (findings + claims)[:8]
-        if all_findings:
-            for item in all_findings:
+        # 3. Key Findings & Extracted Claims
+        findings = (doc_data.get("key_findings") if doc_data else None) or dna.get("key_findings", []) or dna.get("claims", [])
+        if findings:
+            doc.add_heading("2. Key Findings & Operational Facts", level=1)
+            for item in findings[:8]:
                 bullet = doc.add_paragraph(item, style="List Bullet")
                 bullet.runs[0].font.size = Pt(10.5)
-        else:
-            doc.add_paragraph("No explicit claims identified.")
 
         # 4. Critical Statistics & Measurements Table
-        stats = dna.get("statistics", [])
+        stats = (doc_data.get("statistics") if doc_data else None) or dna.get("statistics", [])
         if stats:
-            doc.add_heading("4. Key Technical Metrics & Statistics", level=1)
+            doc.add_heading("3. Key Technical Metrics & Parameters", level=1)
             stats_table = doc.add_table(rows=1, cols=2)
             stats_table.alignment = WD_TABLE_ALIGNMENT.CENTER
             hdr_cells = stats_table.rows[0].cells
-            hdr_cells[0].text = "Metric / Parameter"
-            hdr_cells[1].text = "Extracted Value & Context"
+            hdr_cells[0].text = "Parameter / Metric"
+            hdr_cells[1].text = "Verified Value & Status"
             set_cell_background(hdr_cells[0], "1E293B")
             set_cell_background(hdr_cells[1], "1E293B")
             hdr_cells[0].paragraphs[0].runs[0].font.color.rgb = RGBColor(255, 255, 255)
@@ -176,38 +175,34 @@ class DeliverablesEngine:
                 set_cell_margins(row_cells[1], 60, 60, 100, 100)
 
         # 5. Risk Assessment & Operational Implications
-        risks = dna.get("risks", [])
-        implications = dna.get("implications", [])
+        risks = (doc_data.get("risks") if doc_data else None) or dna.get("risks", [])
+        implications = (doc_data.get("implications") if doc_data else None) or dna.get("implications", [])
         if risks or implications:
-            doc.add_heading("5. Risk Evaluation & Operational Implications", level=1)
+            doc.add_heading("4. Risk Evaluation & Operational Implications", level=1)
             if risks:
-                doc.add_heading("Identified Risks:", level=2)
-                for r in risks:
+                for r in risks[:6]:
                     bp = doc.add_paragraph(r, style="List Bullet")
                     bp.runs[0].font.color.rgb = RGBColor(180, 40, 40)
             if implications:
-                doc.add_heading("Operational Implications:", level=2)
-                for imp in implications:
+                for imp in implications[:4]:
                     doc.add_paragraph(imp, style="List Bullet")
 
         # 6. Strategic Recommendations & Action Plan
-        recs = dna.get("recommendations", [])
-        doc.add_heading("6. Strategic Recommendations & Corrective Actions", level=1)
+        recs = (doc_data.get("recommendations") if doc_data else None) or dna.get("recommendations", [])
         if recs:
-            for idx, r in enumerate(recs):
+            doc.add_heading("5. Strategic Recommendations & Corrective Actions", level=1)
+            for idx, r in enumerate(recs[:6]):
                 p = doc.add_paragraph(f"{idx+1}. {r}")
                 p.runs[0].font.bold = True
                 p.runs[0].font.size = Pt(10.5)
-        else:
-            doc.add_paragraph("Continue baseline operations under regular monitoring protocols.")
 
         # 7. Official Sign-off & Approval Matrix Table
         doc.add_paragraph()
-        doc.add_heading("7. Sign-off & Approval Signatures", level=1)
+        doc.add_heading("6. Sign-off & Approval Signatures", level=1)
         sign_table = doc.add_table(rows=3, cols=3)
         sign_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         
-        sign_headers = ["Initiating Officer / Engineer", "Reviewing Authority (Technical)", "Approving Authority (Executive)"]
+        sign_headers = ["Initiating Officer / Lead", "Technical Review Authority", "Executive Approving Authority"]
         for c_idx, title in enumerate(sign_headers):
             cell = sign_table.cell(0, c_idx)
             cell.text = title
@@ -220,13 +215,13 @@ class DeliverablesEngine:
             cell_sig.text = "\n\n_______________________\nSignature & Stamp"
             cell_sig.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             set_cell_background(cell_sig, "FAFAFA")
-            set_cell_margins(cell_sig, 100, 100, 100, 100)
+            set_cell_margins(cell_sig, 80, 80, 100, 100)
             
             cell_date = sign_table.cell(2, c_idx)
             cell_date.text = "Date: _______________"
             cell_date.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
             set_cell_background(cell_date, "FAFAFA")
-            set_cell_margins(cell_date, 60, 60, 100, 100)
+            set_cell_margins(cell_date, 50, 50, 100, 100)
             
         doc.save(str(file_path))
         
@@ -235,7 +230,7 @@ class DeliverablesEngine:
             "filename": filename,
             "path": str(file_path),
             "format": "word_docx",
-            "title": f"Approval Note - {dna.get('identity', 'Assessment')}",
+            "title": f"Approval Note - {str(title_text)[:40]}",
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "size_bytes": file_path.stat().st_size
         }
@@ -246,9 +241,10 @@ class DeliverablesEngine:
         self,
         dna: dict[str, Any],
         params: dict[str, Any],
-        custom_content: Optional[str] = None
+        custom_content: Optional[str] = None,
+        slides_data: Optional[list[dict[str, Any]]] = None
     ) -> dict[str, Any]:
-        """Generate a multi-slide PowerPoint presentation (.pptx)."""
+        """Generate a multi-slide PowerPoint presentation (.pptx) tailored to input."""
         file_id = str(uuid.uuid4())[:8]
         filename = f"Board_Presentation_{file_id}.pptx"
         file_path = self.output_dir / filename
@@ -261,13 +257,14 @@ class DeliverablesEngine:
         c_dark_navy = PptxRGBColor(15, 23, 42)
         c_cyan_accent = PptxRGBColor(14, 165, 233)
         c_gray_text = PptxRGBColor(71, 85, 105)
-        c_danger_red = PptxRGBColor(220, 38, 38)
         
-        # Slide 1: Title Slide
         blank_slide_layout = prs.slide_layouts[6]
-        s1 = prs.slides.add_slide(blank_slide_layout)
         
-        # Header banner shape
+        title_text = params.get("title") or dna.get("identity") or "Executive Technical Briefing"
+        subtitle_text = params.get("subtitle") or dna.get("overview") or f"Target Audience: {params.get('target_audience', 'Board of Directors')}"
+
+        # Slide 1: Title Slide
+        s1 = prs.slides.add_slide(blank_slide_layout)
         txBox = s1.shapes.add_textbox(PptxInches(1.0), PptxInches(1.5), PptxInches(11.333), PptxInches(4.5))
         tf = txBox.text_frame
         tf.word_wrap = True
@@ -279,19 +276,19 @@ class DeliverablesEngine:
         p_badge.font.color.rgb = c_cyan_accent
         
         p_title = tf.add_paragraph()
-        p_title.text = dna.get("identity", "Strategic Assessment").upper()
-        p_title.font.size = PptxPt(36)
+        p_title.text = str(title_text).upper()
+        p_title.font.size = PptxPt(32)
         p_title.font.bold = True
         p_title.font.color.rgb = c_dark_navy
         
         p_sub = tf.add_paragraph()
-        p_sub.text = f"Audience: {params.get('target_audience', 'Board of Directors')} | Objective: {params.get('objective', 'Executive Decision')}"
-        p_sub.font.size = PptxPt(16)
+        p_sub.text = str(subtitle_text)
+        p_sub.font.size = PptxPt(15)
         p_sub.font.color.rgb = c_gray_text
         
         p_date = tf.add_paragraph()
         p_date.text = f"Date: {datetime.now().strftime('%d %B %Y')} | Sovereign AI Verification Engine"
-        p_date.font.size = PptxPt(12)
+        p_date.font.size = PptxPt(11)
         p_date.font.color.rgb = c_gray_text
 
         def create_content_slide(title_text: str, subtitle_text: str, bullet_points: list[str], notes_text: str = ""):
@@ -324,37 +321,26 @@ class DeliverablesEngine:
                 slide.notes_slide.notes_text_frame.text = notes_text
             return slide
 
-        # Slide 2: Executive Overview
-        overview_bullets = [
-            dna.get("overview", "High level context."),
-            f"Source Document: {dna.get('source_name', 'Industrial Log')}",
-            f"Key Stakeholders: {', '.join(dna.get('entities', {}).get('organizations', [])[:4]) or 'Internal PSU'}"
-        ]
-        create_content_slide("Executive Overview", "Context and Core Objective", overview_bullets, "Speaker Note: Emphasize sovereign on-premises validation.")
-
-        # Slide 3: Key Findings & Claims
-        findings_bullets = (dna.get("key_findings", []) + dna.get("claims", []))[:5]
-        if not findings_bullets:
-            findings_bullets = ["No direct findings recorded in source."]
-        create_content_slide("Key Findings & Factual Claims", "Extracted with High-Fidelity Content DNA", findings_bullets, "Speaker Note: Walk through each verified claim.")
-
-        # Slide 4: Data & Statistics
-        stats_bullets = [str(s) for s in dna.get("statistics", [])[:5]]
-        if not stats_bullets:
-            stats_bullets = ["Operating within baseline tolerances."]
-        create_content_slide("Critical Statistics & Measurements", "Empirical Data Points & Quantities", stats_bullets, "Speaker Note: Focus on quantitative metrics.")
-
-        # Slide 5: Risk & Implications
-        risks_bullets = [f"[RISK] {r}" for r in dna.get("risks", [])[:3]] + [f"[IMPLICATION] {i}" for i in dna.get("implications", [])[:3]]
-        if not risks_bullets:
-            risks_bullets = ["No severe operational risks flagged."]
-        create_content_slide("Risk Assessment & Operational Impact", "Mitigation Protocols & Exposure Analysis", risks_bullets, "Speaker Note: Detail risk mitigations.")
-
-        # Slide 6: Recommendations & Action Plan
-        recs_bullets = [f"Step {i+1}: {r}" for i, r in enumerate(dna.get("recommendations", [])[:5])]
-        if not recs_bullets:
-            recs_bullets = ["Proceed with standard operating procedure."]
-        create_content_slide("Strategic Recommendations", "Actionable Next Steps & Implementation Roadmap", recs_bullets, "Speaker Note: Secure approvals for recommended items.")
+        # If custom slides_data is provided, build dynamic slides from input
+        if slides_data and isinstance(slides_data, list):
+            for s in slides_data:
+                s_title = s.get("title", "Key Strategic Analysis")
+                s_sub = s.get("subtitle", "Empirical Evaluation")
+                s_bullets = s.get("bullets", [])
+                s_notes = s.get("speaker_note", "")
+                if s_bullets:
+                    create_content_slide(s_title, s_sub, s_bullets, s_notes)
+        else:
+            if dna.get("overview"):
+                create_content_slide("Executive Overview", "Context and Core Objective", [dna.get("overview")], "Speaker Note: Emphasize sovereign on-premises validation.")
+            if dna.get("key_findings") or dna.get("claims"):
+                create_content_slide("Key Findings & Factual Claims", "Extracted Evidence", (dna.get("key_findings", []) + dna.get("claims", []))[:6], "Speaker Note: Walk through each verified claim.")
+            if dna.get("statistics"):
+                create_content_slide("Critical Statistics & Measurements", "Empirical Data Points", [str(s) for s in dna.get("statistics", [])[:6]], "Speaker Note: Focus on quantitative metrics.")
+            if dna.get("risks"):
+                create_content_slide("Risk Assessment & Operational Impact", "Mitigation Protocols", [f"[RISK] {r}" for r in dna.get("risks", [])[:5]], "Speaker Note: Detail risk mitigations.")
+            if dna.get("recommendations"):
+                create_content_slide("Strategic Recommendations", "Actionable Implementation Roadmap", [f"Step {i+1}: {r}" for i, r in enumerate(dna.get("recommendations", [])[:5])], "Speaker Note: Action plan.")
 
         prs.save(str(file_path))
         
@@ -363,7 +349,7 @@ class DeliverablesEngine:
             "filename": filename,
             "path": str(file_path),
             "format": "powerpoint_pptx",
-            "title": f"Presentation - {dna.get('identity', 'Deck')}",
+            "title": f"Presentation - {str(title_text)[:40]}",
             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "size_bytes": file_path.stat().st_size
         }
@@ -373,7 +359,8 @@ class DeliverablesEngine:
     def generate_excel_sheet(
         self,
         dna: dict[str, Any],
-        params: dict[str, Any]
+        params: dict[str, Any],
+        sheet_data: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
         """Generate a multi-sheet Excel Workbook (.xlsx) for calculations and data matrices."""
         file_id = str(uuid.uuid4())[:8]
@@ -385,8 +372,6 @@ class DeliverablesEngine:
         # Styles
         header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
         header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-        sub_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
-        accent_fill = PatternFill(start_color="E0F2FE", end_color="E0F2FE", fill_type="solid")
         bold_font = Font(name="Calibri", size=11, bold=True)
         thin_border = Border(
             left=Side(style='thin', color='CBD5E1'),
@@ -395,6 +380,8 @@ class DeliverablesEngine:
             bottom=Side(style='thin', color='CBD5E1')
         )
         
+        title_text = params.get("title") or dna.get("identity") or "Engineering Assessment"
+
         # Sheet 1: Executive Summary
         ws1 = wb.active
         ws1.title = "Executive_Summary"
@@ -402,7 +389,7 @@ class DeliverablesEngine:
         
         ws1["A1"] = "SOVEREIGN INDUSTRIAL AI - DATA & CALCULATION WORKBOOK"
         ws1["A1"].font = Font(name="Calibri", size=14, bold=True, color="0F172A")
-        ws1["A2"] = f"Subject: {dna.get('identity', 'Assessment')} | Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        ws1["A2"] = f"Subject: {title_text} | Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         ws1["A2"].font = Font(name="Calibri", size=10, italic=True, color="64748B")
         
         ws1["A4"] = "PARAMETER"
@@ -412,14 +399,17 @@ class DeliverablesEngine:
         ws1["A4"].font = header_font
         ws1["B4"].font = header_font
         
+        stats = (sheet_data.get("statistics") if sheet_data else None) or dna.get("statistics", [])
+        risks = (sheet_data.get("risks") if sheet_data else None) or dna.get("risks", [])
+        claims = (sheet_data.get("key_findings") if sheet_data else None) or dna.get("claims", [])
+
         summary_rows = [
-            ("Source Document", dna.get("source_name", "Documentation")),
-            ("Audience", params.get("target_audience", "Executives")),
-            ("Objective", params.get("objective", "Analysis & Calculation")),
-            ("Total Claims Extracted", len(dna.get("claims", []))),
-            ("Total Statistics Extracted", len(dna.get("statistics", []))),
-            ("Total Risks Identified", len(dna.get("risks", []))),
-            ("Air-Gap Status", "100% On-Premises Verified")
+            ("Source / Scope", str(title_text)),
+            ("Audience", params.get("target_audience", "Executives & Technical Reviewers")),
+            ("Total Metrics / Parameters", len(stats)),
+            ("Total Key Findings", len(claims)),
+            ("Total Risks Flagged", len(risks)),
+            ("Air-Gap Security Verification", "100% On-Premises Sovereign Verified")
         ]
         for r_idx, (k, v) in enumerate(summary_rows, start=5):
             ws1[f"A{r_idx}"] = k
@@ -439,16 +429,14 @@ class DeliverablesEngine:
             cell.font = header_font
             cell.alignment = Alignment(horizontal="center")
             
-        stats = dna.get("statistics", [])
         if not stats:
-            stats = ["Flow Rate: 450 m3/h", "Operating Temperature: 82.5 C", "Pressure Delta: 1.4 bar", "Power Consumption: 120 kW"]
+            stats = ["Operating Metric 1", "Baseline Throughput Value"]
             
         for idx, st in enumerate(stats, start=2):
             ws2.cell(row=idx, column=1, value=idx-1).border = thin_border
             ws2.cell(row=idx, column=2, value=str(st)).border = thin_border
-            # Try to extract numbers
             nums = re.findall(r"[-+]?\d*\.\d+|\d+", str(st))
-            val = float(nums[0]) if nums else 100.0
+            val = float(nums[0]) if nums else float(idx * 10)
             ws2.cell(row=idx, column=3, value=val).border = thin_border
             ws2.cell(row=idx, column=4, value="Standard Units").border = thin_border
             ws2.cell(row=idx, column=5, value=f"=C{idx}*0.05").border = thin_border

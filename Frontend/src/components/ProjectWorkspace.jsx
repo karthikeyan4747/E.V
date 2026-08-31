@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { sovereignAPI } from '../services/api'
 
-export function ProjectWorkspace({ onWorkspaceChange }) {
+export function ProjectWorkspace({ onWorkspaceChange, onDebugInAgent }) {
   const [treeData, setTreeData] = useState(null)
   const [currentFolder, setCurrentFolder] = useState('')
   const [folderInput, setFolderInput] = useState('')
@@ -41,12 +41,6 @@ export function ProjectWorkspace({ onWorkspaceChange }) {
 
   const folderPickerRef = useRef(null)
   const filePickerRef = useRef(null)
-
-  const quickBookmarks = [
-    { label: 'EV Workspace', path: 'c:\\Users\\Karthikeyan K\\Desktop\\EV' },
-    { label: 'Backend', path: 'c:\\Users\\Karthikeyan K\\Desktop\\EV\\Backend' },
-    { label: 'Frontend', path: 'c:\\Users\\Karthikeyan K\\Desktop\\EV\\Frontend' },
-  ]
 
   const loadBackendTree = async () => {
     setIsLoading(true)
@@ -371,7 +365,7 @@ export function ProjectWorkspace({ onWorkspaceChange }) {
             className="px-3.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs font-mono transition flex items-center gap-2 shadow-md shadow-sky-500/20"
           >
             <FolderOpen className="w-4 h-4 fill-current" />
-            <span>Select Folder</span>
+            <span>Open Folder</span>
           </button>
 
           {/* Native OS Files Select Button */}
@@ -381,25 +375,12 @@ export function ProjectWorkspace({ onWorkspaceChange }) {
             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono transition flex items-center gap-1.5 border border-slate-700"
           >
             <FilePlus className="w-3.5 h-3.5 text-sky-400" />
-            <span>Select Files</span>
+            <span>Import Files</span>
           </button>
 
-          {/* Quick Bookmarks */}
-          <div className="flex items-center gap-1">
-            <span className="text-[10px] font-mono text-slate-500 hidden sm:inline ml-2">Quick:</span>
-            {quickBookmarks.map((bm, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  setFolderInput(bm.path)
-                  handleOpenFolderByPath(bm.path)
-                }}
-                className="px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-[11px] font-mono text-slate-300 border border-slate-700 transition"
-              >
-                {bm.label}
-              </button>
-            ))}
-          </div>
+          <span className="text-[11px] font-mono text-slate-400 hidden sm:inline ml-2">
+            Active Workspace: <strong className="text-sky-300">{currentFolder || 'EV'}</strong>
+          </span>
         </div>
 
         {/* Current Folder Path Status */}
@@ -497,14 +478,27 @@ export function ProjectWorkspace({ onWorkspaceChange }) {
                   <span className="text-[10px] font-mono text-slate-500">({selectedFile.size_bytes} bytes)</span>
                 </div>
 
-                <button
-                  onClick={handleSaveFile}
-                  disabled={isSaving}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-400 text-xs font-mono border border-sky-500/40 transition"
-                >
-                  {isSaved ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Save className="w-3.5 h-3.5" />}
-                  <span>{isSaved ? 'Saved!' : 'Save'}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  {onDebugInAgent && (
+                    <button
+                      onClick={() => onDebugInAgent(selectedFile)}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 text-xs font-mono border border-purple-500/40 transition"
+                      title="Open in Agent Chat to debug or enhance this file"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Debug in Agent</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={handleSaveFile}
+                    disabled={isSaving}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-400 text-xs font-mono border border-sky-500/40 transition"
+                  >
+                    {isSaved ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Save className="w-3.5 h-3.5" />}
+                    <span>{isSaved ? 'Saved!' : 'Save'}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Code Textarea */}

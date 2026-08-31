@@ -12,12 +12,12 @@ import {
 
 export function ActivityBar({ activeView, onViewChange }) {
   const navItems = [
-    { id: 'agent', label: 'Agent Studio', icon: Bot, badge: 'PLAN' },
-    { id: 'dna', label: 'Content DNA', icon: Dna, badge: 'CORE' },
-    { id: 'workspace', label: 'Project Files', icon: FolderTree },
-    { id: 'sandbox', label: 'Code Sandbox', icon: TerminalSquare },
-    { id: 'council', label: 'Council Debate', icon: Users },
-    { id: 'deliverables', label: 'Deliverables', icon: FileCheck2 },
+    { id: 'agent', label: 'Agent Chat', icon: Bot, badge: 'AGENT' },
+    { id: 'workspace', label: 'Project Code', icon: FolderTree, badge: 'CODE' },
+    { id: 'dna', label: 'Content DNA', icon: Dna, badge: 'OCR' },
+    { id: 'council', label: 'Council Debate', icon: Users, badge: 'POV' },
+    { id: 'deliverables', label: 'Deliverables', icon: FileCheck2, badge: 'DOCS' },
+    { id: 'sandbox', label: 'Code Sandbox', icon: TerminalSquare, badge: 'RUN' },
     { id: 'network', label: 'Sovereignty', icon: ShieldAlert, badge: 'AIR' },
   ]
 

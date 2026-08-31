@@ -70,4 +70,7 @@ class SovereignNetworkMonitor:
             "recent_logs": self.logs[:50]
         }
 
+    def get_audit_summary(self) -> dict[str, Any]:
+        return self.get_status()
+
 network_monitor = SovereignNetworkMonitor()

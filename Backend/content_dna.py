@@ -91,8 +91,36 @@ def extract_text_from_excel_bytes(excel_bytes: bytes) -> str:
     except Exception as e:
         return f"[Excel parse error: {str(e)}]"
 
+def strip_rtf_and_markup(raw: str) -> str:
+    """Strip RTF, HTML, and binary formatting control words to extract clean plain text."""
+    if not raw:
+        return ""
+    if r"{\rtf" in raw or r"\rtf1" in raw or r"\ansicpg" in raw:
+        text = raw
+        # 1. Remove major RTF destination groups
+        text = re.sub(r'\{\\\*(?:listtable|listoverridetable|expandedcolortbl|fonttbl|colortbl|stylesheet|info)[^}]*\}', '', text, flags=re.DOTALL)
+        text = re.sub(r'\{\\(?:fonttbl|colortbl|stylesheet|info|listtable)[^}]*\}', '', text, flags=re.DOTALL)
+        # 2. Handle nested brackets
+        while re.search(r'\{\\\*?[a-zA-Z]+[^{}]*\}', text):
+            text = re.sub(r'\{\\\*?[a-zA-Z]+[^{}]*\}', '', text)
+        # 3. Convert formatting breaks & bullets
+        text = text.replace(r'\par', '\n').replace(r'\line', '\n').replace(r'\tab', ' ').replace(r'\~', ' ')
+        text = re.sub(r'\\u8226\??', '• ', text)
+        text = re.sub(r"\\'[0-9a-fA-F]{2}", ' ', text)
+        text = re.sub(r'\\u[0-9]{4,5}\??', ' ', text)
+        # 4. Strip control words
+        text = re.sub(r'\\[a-zA-Z]+-?\d* ?', '', text)
+        # 5. Clean braces
+        text = text.replace('{', '').replace('}', '').replace('\\', '')
+        # 6. Filter lines
+        lines = [re.sub(r'[ \t]+', ' ', l).strip() for l in text.splitlines()]
+        clean_lines = [l for l in lines if l and not l.startswith(r"\*") and not l.startswith("cocoa") and not l.startswith("ansi")]
+        return '\n'.join(clean_lines)
+    return raw
+
 def heuristic_dna_extractor(text: str, source_name: str) -> dict[str, Any]:
     """Robust semantic extraction fallback adhering to the Content DNA schema."""
+    text = strip_rtf_and_markup(text)
     lines = [l.strip() for l in text.split("\n") if l.strip()]
     
     # Extract numbers/statistics
@@ -168,9 +196,10 @@ class ContentDNAManager:
             return extract_text_from_image_bytes(content_bytes)
         else:
             try:
-                return content_bytes.decode("utf-8")
+                raw_txt = content_bytes.decode("utf-8")
             except UnicodeDecodeError:
-                return content_bytes.decode("latin-1", errors="replace")
+                raw_txt = content_bytes.decode("latin-1", errors="replace")
+            return strip_rtf_and_markup(raw_txt)
 
     async def generate_content_dna(
         self,
@@ -179,6 +208,7 @@ class ContentDNAManager:
         source_type: str = "document",
         model: Optional[str] = None
     ) -> dict[str, Any]:
+        source_text = strip_rtf_and_markup(source_text)
         dna_id = str(uuid.uuid4())
         
         prompt = f"""
@@ -267,6 +297,64 @@ SOURCE TEXT:
         
         self.dna_store[dna_id] = dna_structure
         return dna_structure
+
+    def compare_sources_for_conflicts(self, dna_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Semantically compare multiple Content DNA structures to identify factual discrepancies
+        (e.g., numerical disagreements on same parameters, date conflicts, or conflicting claims).
+        """
+        if len(dna_list) < 2:
+            return []
+
+        conflicts = []
+        doc_a = dna_list[0]
+        name_a = doc_a.get("source_name", "Source A")
+        stats_a = doc_a.get("statistics", [])
+        claims_a = doc_a.get("claims", [])
+        dates_a = doc_a.get("dates", [])
+
+        for doc_b in dna_list[1:]:
+            name_b = doc_b.get("source_name", "Source B")
+            stats_b = doc_b.get("statistics", [])
+            claims_b = doc_b.get("claims", [])
+            dates_b = doc_b.get("dates", [])
+
+            # Check numeric/statistic discrepancies
+            for sa in stats_a:
+                sa_nums = re.findall(r"\d+(?:\.\d+)?", str(sa))
+                sa_words = set(re.findall(r"[A-Za-z]{3,}", str(sa).lower()))
+                if not sa_nums or not sa_words:
+                    continue
+
+                for sb in stats_b:
+                    sb_nums = re.findall(r"\d+(?:\.\d+)?", str(sb))
+                    sb_words = set(re.findall(r"[A-Za-z]{3,}", str(sb).lower()))
+                    
+                    # If discussing the same subject (word overlap) but numbers differ
+                    common_words = sa_words.intersection(sb_words) - {"the", "and", "for", "with", "from", "that", "this", "unit", "line"}
+                    if len(common_words) >= 2 and sa_nums != sb_nums:
+                        conflicts.append({
+                            "parameter": " ".join(list(common_words)[:3]).title(),
+                            "severity": "HIGH",
+                            "description": f"Numerical discrepancy detected between sources regarding {', '.join(common_words)}.",
+                            "source_a": {"source": name_a, "value": str(sa), "numbers": sa_nums},
+                            "source_b": {"source": name_b, "value": str(sb), "numbers": sb_nums}
+                        })
+
+            # Check date discrepancies
+            for da in dates_a:
+                for db in dates_b:
+                    if da != db and len(str(da)) > 4 and len(str(db)) > 4:
+                        # If date strings exist in both but differ
+                        conflicts.append({
+                            "parameter": "Timeline / Target Date",
+                            "severity": "MEDIUM",
+                            "description": f"Timeline or inspection date discrepancy between {name_a} and {name_b}.",
+                            "source_a": {"source": name_a, "value": str(da)},
+                            "source_b": {"source": name_b, "value": str(db)}
+                        })
+
+        return conflicts[:6]
 
     def get_dna(self, dna_id: str) -> Optional[dict[str, Any]]:
         return self.dna_store.get(dna_id)

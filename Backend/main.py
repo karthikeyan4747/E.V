@@ -234,11 +234,13 @@ class PlanRequest(BaseModel):
     prompt: str
     workspace_path: Optional[str] = None
     attached_files: Optional[list[dict[str, Any]]] = None
+    active_file: Optional[str] = None
 
 class StreamAgentRequest(BaseModel):
     prompt: str
     workspace_path: Optional[str] = None
     attached_files: Optional[list[dict[str, Any]]] = None
+    active_file: Optional[str] = None
     approved_plan_id: Optional[str] = None
     auto_approve: bool = False
 
@@ -249,7 +251,8 @@ async def formulate_agent_plan(req: PlanRequest):
     plan = await autonomous_agent.formulate_plan(
         prompt=req.prompt,
         workspace_path=req.workspace_path or project_workspace.current_workspace,
-        attached_files=req.attached_files
+        attached_files=req.attached_files,
+        active_file=req.active_file
     )
     return plan
 
@@ -266,6 +269,7 @@ async def stream_agent_execution(req: StreamAgentRequest):
                 prompt=req.prompt,
                 workspace_path=req.workspace_path or project_workspace.current_workspace,
                 attached_files=req.attached_files,
+                active_file=req.active_file,
                 approved_plan_id=req.approved_plan_id,
                 auto_approve=req.auto_approve
             ):
