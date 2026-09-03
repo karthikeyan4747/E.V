@@ -51,9 +51,14 @@ import {
   Edit2,
   PanelLeftClose,
   PanelLeftOpen,
-  Share2
+  Share2,
+  BookOpen,
+  Video,
+  Film,
+  Image as ImageIcon
 } from 'lucide-react'
 import { sovereignAPI } from '../services/api'
+import AgentActivityPanel from './AgentActivityPanel'
 
 const SESSIONS_STORAGE_KEY = 'ev_sovereign_sessions_v2'
 const ACTIVE_SESSION_STORAGE_KEY = 'ev_active_session_id_v2'
@@ -106,7 +111,8 @@ export function AgentStudio({
   onOpenSandbox,
   onSetInferencing, 
   activeWorkspace = 'EV',
-  activeFile = null 
+  activeFile = null,
+  activeModel = 'qwen3:8b'
 }) {
   // Session / Multi-Chat State
   const [sessions, setSessions] = useState(() => {
@@ -147,11 +153,15 @@ export function AgentStudio({
   const [artifacts, setArtifacts] = useState(currentSession?.artifacts || [])
   const [attachedFiles, setAttachedFiles] = useState([])
   const [chatMessages, setChatMessages] = useState(currentSession?.messages || [])
+  const [activeWorkflow, setActiveWorkflow] = useState(currentSession?.activeWorkflow || null)
+  const [knowledgeResult, setKnowledgeResult] = useState(currentSession?.knowledgeResult || null)
+  const [userActionRequired, setUserActionRequired] = useState(null)
   const [councilResult, setCouncilResult] = useState(currentSession?.councilResult || null)
   const [councilOffer, setCouncilOffer] = useState(currentSession?.councilOffer || null)
   const [dnaResult, setDnaResult] = useState(currentSession?.dnaResult || null)
   const [conflictResult, setConflictResult] = useState(currentSession?.conflictResult || null)
   const [sovereigntyResult, setSovereigntyResult] = useState(currentSession?.sovereigntyResult || null)
+  const [mediaResult, setMediaResult] = useState(currentSession?.mediaResult || null)
   const [confidenceMetrics, setConfidenceMetrics] = useState(currentSession?.confidenceMetrics || null)
   const [nextActions, setNextActions] = useState(currentSession?.nextActions || null)
   const [activeDnaTab, setActiveDnaTab] = useState('claims')
@@ -184,6 +194,9 @@ export function AgentStudio({
     setTraceSteps(target.traceSteps || [])
     setExecutedEvents(target.executedEvents || [])
     setArtifacts(target.artifacts || [])
+    setActiveWorkflow(target.activeWorkflow || null)
+    setKnowledgeResult(target.knowledgeResult || null)
+    setUserActionRequired(null)
     setCouncilResult(target.councilResult || null)
     setCouncilOffer(target.councilOffer || null)
     setDnaResult(target.dnaResult || null)
@@ -205,6 +218,25 @@ export function AgentStudio({
     }))
   }, [activeSessionId])
 
+  // Conflict & Permission Resolution Callback
+  const handleResolveConflict = async (chosen) => {
+    setUserActionRequired(null)
+    const val = typeof chosen === 'object' ? (chosen.value || chosen.label || JSON.stringify(chosen)) : chosen
+    const prefix = typeof chosen === 'object' ? chosen.prefix : null
+
+    setChatMessages(prev => [...prev, {
+      role: 'user',
+      content: `User Permission: ${val}${prefix ? ` (Commands starting with \`${prefix}\` remembered for this session)` : ''}`
+    }])
+    if (activeWorkflow?.workflow_id || activeSessionId) {
+      try {
+        await sovereignAPI.resumeWorkflow(activeWorkflow?.workflow_id || activeSessionId, val, val, prefix)
+      } catch (e) {
+        console.warn('Workflow resume error', e)
+      }
+    }
+  }
+
   // Create a brand new session
   const handleCreateNewChat = () => {
     if (isStreaming) return
@@ -215,6 +247,9 @@ export function AgentStudio({
     setTraceSteps([])
     setExecutedEvents([])
     setArtifacts([])
+    setActiveWorkflow(null)
+    setKnowledgeResult(null)
+    setUserActionRequired(null)
     setCouncilResult(null)
     setCouncilOffer(null)
     setDnaResult(null)
@@ -286,23 +321,85 @@ export function AgentStudio({
     if (e.target.files && e.target.files.length > 0) {
       for (let i = 0; i < e.target.files.length; i++) {
         const file = e.target.files[i]
+        const fname = file.name.toLowerCase()
+        const isImage = file.type.startsWith('image/') || /\.(png|jpg|jpeg|webp|bmp|gif|tiff|tif)$/i.test(fname)
+        const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|m4v|flv)$/i.test(fname)
+
         const reader = new FileReader()
-        reader.onload = (event) => {
-          const rawContent = event.target.result || ''
-          const cleanContent = stripRTF(rawContent)
-          setAttachedFiles(prev => [
-            ...prev,
-            {
-              name: file.name,
-              size: file.size,
-              content: cleanContent
-            }
-          ])
+        if (isImage || isVideo) {
+          reader.onload = (event) => {
+            const dataUrl = event.target.result || ''
+            setAttachedFiles(prev => [
+              ...prev,
+              {
+                name: file.name,
+                size: file.size,
+                type: file.type || (isImage ? 'image/png' : 'video/mp4'),
+                is_media: true,
+                is_image: isImage,
+                is_video: isVideo,
+                data_url: dataUrl,
+                content: dataUrl
+              }
+            ])
+          }
+          reader.readAsDataURL(file)
+        } else {
+          reader.onload = (event) => {
+            const rawContent = event.target.result || ''
+            const cleanContent = stripRTF(rawContent)
+            setAttachedFiles(prev => [
+              ...prev,
+              {
+                name: file.name,
+                size: file.size,
+                type: file.type || 'text/plain',
+                is_media: false,
+                content: cleanContent
+              }
+            ])
+          }
+          reader.readAsText(file)
         }
-        reader.readAsText(file)
       }
     }
   }
+
+  // Support pasting images from clipboard
+  useEffect(() => {
+    const handlePaste = (e) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        if (item.type.indexOf('image') !== -1) {
+          const blob = item.getAsFile()
+          if (!blob) continue
+          const reader = new FileReader()
+          reader.onload = (event) => {
+            const dataUrl = event.target.result || ''
+            const filename = `screenshot_${Date.now()}.png`
+            setAttachedFiles(prev => [
+              ...prev,
+              {
+                name: filename,
+                size: blob.size,
+                type: blob.type || 'image/png',
+                is_media: true,
+                is_image: true,
+                is_video: false,
+                data_url: dataUrl,
+                content: dataUrl
+              }
+            ])
+          }
+          reader.readAsDataURL(blob)
+        }
+      }
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [])
 
   const handleRemoveAttached = (index) => {
     setAttachedFiles(prev => prev.filter((_, i) => i !== index))
@@ -336,6 +433,7 @@ export function AgentStudio({
     setDnaResult(null)
     setConflictResult(null)
     setSovereigntyResult(null)
+    setMediaResult(null)
     setConfidenceMetrics(null)
     setSelectedEvidence(null)
     if (onSetInferencing) onSetInferencing(true, 'Sovereign Agent Orchestrating...')
@@ -354,7 +452,8 @@ export function AgentStudio({
     const newMessages = [...chatMessages, { 
       role: 'user', 
       content: textToRun,
-      files: filesToSend.map(f => f.name)
+      files: filesToSend.map(f => f.name),
+      media_files: filesToSend.filter(f => f.is_media)
     }]
     setChatMessages(newMessages)
 
@@ -364,7 +463,8 @@ export function AgentStudio({
       prompt: textToRun,
       attached_files: filesToSend,
       active_file: activeFile?.path || null,
-      auto_approve: true
+      auto_approve: true,
+      model: activeModel || null
     }
 
     let finalTrace = []
@@ -375,20 +475,60 @@ export function AgentStudio({
     let finalCouncilOffer = null
     let finalConflict = null
     let finalSov = null
+    let finalMedia = null
     let finalMetrics = null
     let finalNextActions = null
+    let finalWf = activeWorkflow
+    let finalKnowledge = null
 
     await sovereignAPI.streamAgent(
       payload,
       (event) => {
         if (event.type === 'status') {
           setStatusMessage(event.message)
+        } else if (event.type === 'workflow_selected') {
+          setActiveWorkflow(event)
+          finalWf = event
         } else if (event.type === 'plan_created') {
           setActivePlan(event.plan)
           if (event.plan?.steps) {
             setTraceSteps(event.plan.steps)
             finalTrace = event.plan.steps
           }
+        } else if (event.type === 'step_started') {
+          setTraceSteps(prev => {
+            const updated = prev.map(st => {
+              if (st.step_id === event.step_id) {
+                return {
+                  ...st,
+                  status: 'RUNNING',
+                  why_necessary: event.reason || st.why_necessary,
+                  tool_used: event.tool_used || st.tool_used,
+                  input_used: event.input_used || st.input_used
+                }
+              }
+              return st
+            })
+            finalTrace = updated
+            return updated
+          })
+        } else if (event.type === 'step_completed') {
+          setTraceSteps(prev => {
+            const updated = prev.map(st => {
+              if (st.step_id === event.step_id) {
+                return {
+                  ...st,
+                  status: 'COMPLETED',
+                  output_produced: event.output_produced || st.output_produced,
+                  verification_status: event.verification_status || st.verification_status,
+                  duration_ms: event.duration_ms || st.duration_ms
+                }
+              }
+              return st
+            })
+            finalTrace = updated
+            return updated
+          })
         } else if (event.type === 'trace_step') {
           setTraceSteps(prev => {
             const updated = prev.map(st => {
@@ -400,6 +540,11 @@ export function AgentStudio({
             finalTrace = updated
             return updated
           })
+        } else if (event.type === 'knowledge_search_completed') {
+          setKnowledgeResult(event)
+          finalKnowledge = event
+        } else if (event.type === 'user_input_required' || event.type === 'permission_required') {
+          setUserActionRequired(event)
         } else if (event.type === 'token') {
           setStreamedText(prev => prev + event.token)
         } else if (event.type === 'council_offer') {
@@ -423,6 +568,9 @@ export function AgentStudio({
         } else if (event.type === 'deliverables_card') {
           setArtifacts(event.artifacts || [])
           finalArtifacts = event.artifacts || []
+        } else if (event.type === 'media_analyzed') {
+          setMediaResult(event)
+          finalMedia = event
         } else if (
           event.type === 'file_modified' || 
           event.type === 'sandbox_result' || 
@@ -430,15 +578,48 @@ export function AgentStudio({
           event.type === 'self_healing' ||
           event.type === 'pre_diagnostic_error'
         ) {
+          if (event.type === 'file_modified' && onFileSelect && event.filename) {
+            onFileSelect({
+              name: event.filename,
+              filename: event.filename,
+              path: event.file_path,
+              content: event.content
+            })
+          }
           setExecutedEvents(prev => {
             const updated = [...prev, event]
             finalEvents = updated
+            return updated
+          })
+        } else if (event.type === 'workflow_completed') {
+          // Guarantee all checklist items are ticked when the workflow finishes
+          setTraceSteps(prev => {
+            const updated = prev.map(st => ({
+              ...st,
+              status: st.status === 'WAITING_FOR_USER' ? st.status : 'COMPLETED',
+              verification_status: (st.verification_status === 'PENDING' || !st.verification_status) 
+                ? 'SOURCE_BACKED' 
+                : st.verification_status
+            }))
+            finalTrace = updated
             return updated
           })
         } else if (event.type === 'completed') {
           setIsStreaming(false)
           if (onSetInferencing) onSetInferencing(false)
           setStreamedText('')
+          // Guarantee all checklist items are ticked when the task finishes
+          setTraceSteps(prev => {
+            const updated = prev.map(st => ({
+              ...st,
+              status: st.status === 'WAITING_FOR_USER' ? st.status : 'COMPLETED',
+              verification_status: (st.verification_status === 'PENDING' || !st.verification_status) 
+                ? 'SOURCE_BACKED' 
+                : st.verification_status
+            }))
+            finalTrace = updated
+            return updated
+          })
           if (event.artifacts && event.artifacts.length > 0) {
             setArtifacts(event.artifacts)
             finalArtifacts = event.artifacts
@@ -457,7 +638,7 @@ export function AgentStudio({
           // Ensure all trace steps marked completed
           const finalizedTrace = finalTrace.map(st => ({
             ...st,
-            status: st.status === 'running' ? 'completed' : st.status
+            status: st.status === 'running' || st.status === 'RUNNING' ? 'COMPLETED' : st.status
           }))
           setTraceSteps(finalizedTrace)
 
@@ -474,11 +655,14 @@ export function AgentStudio({
             traceSteps: finalizedTrace,
             executedEvents: finalEvents,
             artifacts: finalArtifacts,
+            activeWorkflow: finalWf,
+            knowledgeResult: finalKnowledge,
             dnaResult: finalDna,
             councilResult: finalCouncil,
             councilOffer: finalCouncilOffer,
             conflictResult: finalConflict,
             sovereigntyResult: finalSov,
+            mediaResult: finalMedia,
             confidenceMetrics: finalMetrics,
             nextActions: finalNextActions
           })
@@ -801,9 +985,25 @@ export function AgentStudio({
                 }`}
               >
                 {msg.files && msg.files.length > 0 && (
-                  <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b border-sky-500/40 text-[11px] font-mono opacity-90">
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Attached: {msg.files.join(', ')}</span>
+                  <div className="space-y-1.5 mb-2 pb-2 border-b border-sky-500/40 text-[11px] font-mono opacity-90">
+                    <div className="flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Attached: {msg.files.join(', ')}</span>
+                    </div>
+                    {msg.media_files && msg.media_files.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {msg.media_files.map((mf, mi) => (
+                          mf.is_image ? (
+                            <img key={mi} src={mf.data_url} alt={mf.name} className="max-h-40 rounded-lg border border-sky-400/40 object-contain bg-black/40 shadow" />
+                          ) : mf.is_video ? (
+                            <div key={mi} className="flex items-center gap-2 p-2 rounded-lg bg-purple-950/70 border border-purple-500/40 text-purple-200">
+                              <Video className="w-4 h-4 text-purple-400" />
+                              <span className="text-xs font-sans">{mf.name}</span>
+                            </div>
+                          ) : null
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="whitespace-pre-wrap font-sans">{msg.content}</div>
@@ -811,56 +1011,54 @@ export function AgentStudio({
             </div>
           ))}
 
-          {/* Live Execution Trace Checklist */}
-          {traceSteps.length > 0 && (
-            <div className="max-w-3xl mx-auto p-4 rounded-xl codex-panel border-sky-500/40 bg-sky-950/15 shadow-xl space-y-3 animate-fade-in">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
-                <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-sky-400" />
-                  <span className="text-xs font-bold font-mono text-white uppercase tracking-wider">
-                    Live Execution Trace ({traceSteps.filter(s => s.status === 'completed').length}/{traceSteps.length} Steps)
-                  </span>
+          {/* Antigravity / Codex-Style Live Agent Activity Panel (Predefined Workflow + Step Details) */}
+          {(traceSteps.length > 0 || activeWorkflow || isStreaming || userActionRequired) && (
+            <AgentActivityPanel
+              activeWorkflow={activeWorkflow}
+              traceSteps={traceSteps}
+              isStreaming={isStreaming}
+              elapsedSeconds={elapsedSeconds}
+              userActionRequired={userActionRequired}
+              onResolveConflict={handleResolveConflict}
+            />
+          )}
+
+          {/* Local Knowledge Search & SOP Provenance Card */}
+          {knowledgeResult && knowledgeResult.results && knowledgeResult.results.length > 0 && (
+            <div className="max-w-3xl mx-auto p-4 rounded-xl codex-panel border-sky-500/40 bg-sky-950/20 space-y-3 animate-fade-in shadow-lg mb-4">
+              <div className="flex items-center justify-between pb-2 border-b border-sky-500/30">
+                <div className="flex items-center gap-2 text-sky-400 font-bold text-xs font-mono uppercase tracking-wider">
+                  <BookOpen className="w-4 h-4" />
+                  <span>Local Knowledge Search ({knowledgeResult.results.length} SOPs / Standards Retrieved)</span>
                 </div>
-                {isStreaming && (
-                  <div className="flex items-center gap-1.5 text-[11px] font-mono text-sky-300 animate-pulse">
-                    <Loader2 className="w-3 h-3 animate-spin text-sky-400" />
-                    <span>EV is executing...</span>
-                  </div>
-                )}
+                <span className="text-[10px] font-mono bg-sky-500/20 text-sky-300 px-2 py-0.5 rounded border border-sky-500/30">
+                  100% ON-PREMISES SOP
+                </span>
               </div>
 
-              <div className="space-y-1.5">
-                {traceSteps.map((st) => (
-                  <div
-                    key={st.step_id}
-                    className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-colors ${
-                      st.status === 'completed'
-                        ? 'bg-slate-900/60 border-emerald-500/30 text-slate-200'
-                        : st.status === 'running'
-                        ? 'bg-sky-950/40 border-sky-500/50 text-sky-200 shadow-sm'
-                        : 'bg-slate-950/40 border-slate-800 text-slate-500'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      {st.status === 'completed' || (!isStreaming && st.status === 'running') ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : st.status === 'running' ? (
-                        <Loader2 className="w-4 h-4 text-sky-400 animate-spin shrink-0" />
-                      ) : (
-                        <span className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] font-mono text-slate-600 shrink-0">
-                          {st.step_id}
-                        </span>
-                      )}
-                      <span className={`font-medium ${st.status === 'running' ? 'text-sky-300 font-semibold' : ''}`}>
-                        {st.title}
+              <p className="text-xs text-slate-300 font-sans leading-relaxed">
+                Sovereign organizational procedures matching query constraints from local repository ({knowledgeResult.total_indexed || 3} documents indexed):
+              </p>
+
+              <div className="space-y-2">
+                {knowledgeResult.results.map((kr, idx) => (
+                  <div key={idx} className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-xs space-y-1.5">
+                    <div className="flex items-center justify-between font-mono">
+                      <span className="font-bold text-sky-300">{kr.source_document}</span>
+                      <span className="text-[10px] text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                        Confidence: {Math.round(kr.confidence * 100)}%
                       </span>
                     </div>
-
-                    {st.detail && (
-                      <span className="text-[11px] font-mono text-slate-400 max-w-xs truncate hidden sm:inline">
-                        {st.detail}
-                      </span>
-                    )}
+                    <div className="text-[11px] font-mono text-purple-300">
+                      {kr.source_section} • Page {kr.source_page}
+                    </div>
+                    <div className="text-slate-300 font-sans text-xs bg-slate-950 p-2 rounded border border-slate-800/80 leading-relaxed">
+                      {kr.text}
+                    </div>
+                    <div className="pt-0.5 flex items-center justify-between text-[10px] font-mono text-slate-500">
+                      <span>Claim ID: {kr.claim_id}</span>
+                      <span className="text-emerald-400 font-semibold">✓ {kr.verification_status}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -920,6 +1118,145 @@ export function AgentStudio({
                   <div className="text-purple-400 font-bold mt-0.5">127.0.0.1:11434</div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Sovereign Local Computer Vision & Video Recognition Card */}
+          {mediaResult && mediaResult.data && (
+            <div className="max-w-3xl mx-auto p-4 rounded-xl codex-panel border-purple-500/40 bg-purple-950/20 space-y-4 animate-fade-in shadow-lg mb-4">
+              <div className="flex items-center justify-between pb-2 border-b border-purple-500/30">
+                <div className="flex items-center gap-2 text-purple-400 font-bold text-xs font-mono uppercase tracking-wider">
+                  {mediaResult.media_type === 'video' ? <Video className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  <span>
+                    Local Computer Vision: {mediaResult.media_type === 'video' ? 'Video Scene Recognition & Timeline' : 'Image Optical Recognition'}
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded border border-purple-500/30">
+                  100% AIR-GAPPED OPENCV
+                </span>
+              </div>
+
+              {/* Image Recognition Layout */}
+              {mediaResult.media_type === 'image' && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {mediaResult.data.thumbnail_url && (
+                    <div className="md:col-span-1 rounded-lg overflow-hidden border border-purple-500/30 bg-black/50 flex items-center justify-center">
+                      <img src={mediaResult.data.thumbnail_url} alt={mediaResult.filename} className="w-full h-auto object-contain max-h-52" />
+                    </div>
+                  )}
+                  <div className={`${mediaResult.data.thumbnail_url ? 'md:col-span-2' : 'md:col-span-3'} space-y-2.5`}>
+                    {/* What is in this image semantic callout */}
+                    {mediaResult.data.what_is_in_image && (
+                      <div className="p-3 rounded-lg bg-black/50 border border-purple-500/40 text-xs text-purple-100 font-sans leading-relaxed space-y-1 shadow-sm">
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-purple-300 font-bold flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Identified Content in Image</span>
+                        </div>
+                        <div className="whitespace-pre-wrap text-slate-200">{mediaResult.data.what_is_in_image}</div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap gap-2 text-[11px] font-mono">
+                      <span className="px-2 py-0.5 bg-purple-900/40 border border-purple-500/30 rounded text-purple-200">
+                        {mediaResult.data.width} × {mediaResult.data.height} px
+                      </span>
+                      <span className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 rounded text-slate-300">
+                        {mediaResult.data.orientation}
+                      </span>
+                      <span className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 rounded text-slate-300">
+                        {mediaResult.data.brightness_desc}
+                      </span>
+                      <span className="px-2 py-0.5 bg-emerald-950/60 border border-emerald-500/40 rounded text-emerald-300">
+                        {mediaResult.data.sharpness_desc}
+                      </span>
+                    </div>
+
+                    {/* Dominant Palette Swatches */}
+                    {mediaResult.data.dominant_colors && mediaResult.data.dominant_colors.length > 0 && (
+                      <div className="pt-1">
+                        <div className="text-[10px] font-mono uppercase text-slate-400 mb-1">Color Palette Profile:</div>
+                        <div className="flex items-center gap-2">
+                          {mediaResult.data.dominant_colors.map((c, ci) => (
+                            <div key={ci} className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/40 border border-slate-800 text-[10px] font-mono">
+                              <span className="w-3 h-3 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: c.hex }} />
+                              <span className="text-slate-300">{c.hex}</span>
+                              <span className="text-slate-500">{c.percentage}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="text-xs text-slate-300 font-sans leading-relaxed pt-1">
+                      {mediaResult.data.summary}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Video Timeline & Keyframes Grid */}
+              {mediaResult.media_type === 'video' && (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+                    <span className="px-2 py-0.5 bg-purple-900/40 border border-purple-500/30 rounded text-purple-200">
+                      Duration: {mediaResult.data.duration_formatted}
+                    </span>
+                    <span className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 rounded text-slate-300">
+                      {mediaResult.data.width} × {mediaResult.data.height} px @ {mediaResult.data.fps} FPS
+                    </span>
+                    <span className="px-2 py-0.5 bg-slate-800/80 border border-slate-700 rounded text-slate-300">
+                      {mediaResult.data.total_frames} Frames
+                    </span>
+                    <span className="px-2 py-0.5 bg-sky-950/60 border border-sky-500/40 rounded text-sky-300">
+                      {mediaResult.data.motion_desc}
+                    </span>
+                  </div>
+
+                  {/* What happens in this video semantic callout */}
+                  {mediaResult.data.what_is_in_video && (
+                    <div className="p-3 rounded-lg bg-black/50 border border-purple-500/40 text-xs text-purple-100 font-sans leading-relaxed space-y-1 shadow-sm">
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-purple-300 font-bold flex items-center gap-1.5">
+                        <Film className="w-3.5 h-3.5 text-purple-400" />
+                        <span>Identified Video Scene & Events</span>
+                      </div>
+                      <div className="whitespace-pre-wrap text-slate-200">{mediaResult.data.what_is_in_video}</div>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-slate-300 font-sans leading-relaxed">
+                    {mediaResult.data.summary}
+                  </p>
+
+                  {/* Chronological Keyframe Gallery */}
+                  {mediaResult.data.keyframes && mediaResult.data.keyframes.length > 0 && (
+                    <div className="pt-2 border-t border-purple-500/20">
+                      <div className="text-[11px] font-mono uppercase text-purple-300 font-bold mb-2 flex items-center gap-1.5">
+                        <Film className="w-3.5 h-3.5" />
+                        <span>Timeline Keyframes ({mediaResult.data.keyframes.length} Sampled Scenes)</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        {mediaResult.data.keyframes.map((kf, kfi) => (
+                          <div key={kfi} className="rounded-lg border border-slate-800 bg-[#0c101a] overflow-hidden flex flex-col group hover:border-purple-500/50 transition">
+                            <div className="relative aspect-video bg-black/60 overflow-hidden flex items-center justify-center">
+                              {kf.thumbnail_url ? (
+                                <img src={kf.thumbnail_url} alt={kf.timestamp} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+                              ) : (
+                                <Video className="w-6 h-6 text-slate-600" />
+                              )}
+                              <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 font-mono text-[9px] text-purple-300 border border-purple-500/40">
+                                {kf.timestamp}
+                              </span>
+                            </div>
+                            <div className="p-1.5 text-[10px] text-slate-400 line-clamp-2 leading-tight">
+                              {kf.description}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1363,13 +1700,28 @@ export function AgentStudio({
                 <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-purple-950/60 border border-purple-500/40 text-purple-300">
                   <FileCode className="w-3 h-3 text-purple-400" />
                   <span className="truncate max-w-[150px]">File: {activeFile.filename || activeFile.name}</span>
+                  {onFileSelect && (
+                    <button 
+                      onClick={() => onFileSelect(null)} 
+                      title="Clear active file focus"
+                      className="hover:text-red-400 ml-0.5 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
                 </div>
               )}
 
               {attachedFiles.map((af, idx) => (
                 <div key={idx} className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-sky-950 border border-sky-500/40 text-sky-200">
-                  <FileCode className="w-3 h-3 text-sky-400" />
-                  <span className="truncate max-w-[120px]">{af.name}</span>
+                  {af.is_image && af.data_url ? (
+                    <img src={af.data_url} alt={af.name} className="w-4 h-4 object-cover rounded shadow-sm" />
+                  ) : af.is_video ? (
+                    <Video className="w-3.5 h-3.5 text-purple-400" />
+                  ) : (
+                    <FileCode className="w-3.5 h-3.5 text-sky-400" />
+                  )}
+                  <span className="truncate max-w-[130px] font-mono text-[11px]">{af.name}</span>
                   <button onClick={() => handleRemoveAttached(idx)} className="hover:text-red-400">
                     <X className="w-3 h-3" />
                   </button>

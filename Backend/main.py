@@ -27,6 +27,7 @@ from deliverables import deliverables_engine, OUTPUT_DIR
 from agent_sandbox import code_sandbox, sovereign_agent
 from project_workspace import project_workspace
 from autonomous_engine import autonomous_agent, session_memory
+from local_knowledge import local_knowledge
 
 load_dotenv()
 
@@ -102,6 +103,9 @@ class ToolRequest(BaseModel):
 
 # ----------------- Core Sovereign Endpoints -----------------
 
+class ModelSetRequest(BaseModel):
+    model: str
+
 @app.get("/health")
 async def health_check():
     """Health status and local Ollama model check."""
@@ -109,7 +113,7 @@ async def health_check():
     return {
         "status": "healthy",
         "sovereign_mode": "AIR_GAPPED_ON_PREMISES",
-        "active_model": models[0] if models else "qwen3:8b",
+        "active_model": sovereign_llm.default_model,
         "available_models": models,
         "external_egress": "STRICTLY_BLOCKED"
     }
@@ -118,7 +122,14 @@ async def health_check():
 async def get_models():
     """List local models available on Ollama instance."""
     models = await sovereign_llm.get_available_models()
-    return {"models": models, "active": models[0] if models else "qwen3:8b"}
+    return {"models": models, "active": sovereign_llm.default_model}
+
+@app.post("/api/models/set")
+@app.post("/api/models/active")
+async def set_active_model_endpoint(req: ModelSetRequest):
+    """Set the active local model dynamically."""
+    active = sovereign_llm.set_default_model(req.model)
+    return {"status": "SUCCESS", "active_model": active}
 
 @app.get("/api/network/audit")
 async def get_network_audit():
@@ -243,6 +254,7 @@ class StreamAgentRequest(BaseModel):
     active_file: Optional[str] = None
     approved_plan_id: Optional[str] = None
     auto_approve: bool = False
+    model: Optional[str] = None
 
 @app.post("/api/agent/plan")
 @app.post("/agent/plan")
@@ -271,7 +283,8 @@ async def stream_agent_execution(req: StreamAgentRequest):
                 attached_files=req.attached_files,
                 active_file=req.active_file,
                 approved_plan_id=req.approved_plan_id,
-                auto_approve=req.auto_approve
+                auto_approve=req.auto_approve,
+                model=req.model
             ):
                 payload = json.dumps(event)
                 yield f"data: {payload}\n\n"
@@ -313,6 +326,75 @@ async def execute_sandbox(req: SandboxRunRequest):
     """Execute Python code directly inside isolated local subprocess sandbox."""
     res = code_sandbox.execute_code(req.code, timeout=req.timeout)
     return res
+
+# ----------------- Local Knowledge Base Endpoints -----------------
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str
+    top_k: int = 3
+    filter_category: Optional[str] = None
+
+class WorkflowResumeRequest(BaseModel):
+    workflow_id: str
+    resolution: str
+    decision: Optional[str] = None
+    command_prefix: Optional[str] = None
+
+@app.get("/api/knowledge/status")
+async def get_knowledge_status():
+    """Get operational status and metadata of local on-premises knowledge repository."""
+    return local_knowledge.get_status()
+
+@app.post("/api/knowledge/search")
+async def search_knowledge(req: KnowledgeSearchRequest):
+    """Search local SOPs, engineering standards, and policies with 0 cloud egress."""
+    results = local_knowledge.search(req.query, top_k=req.top_k, filter_category=req.filter_category)
+    return {
+        "status": "SUCCESS",
+        "query": req.query,
+        "results_count": len(results),
+        "results": [r.to_dict() for r in results]
+    }
+
+@app.post("/api/knowledge/index")
+async def index_knowledge_file(
+    file: UploadFile = File(...),
+    category: Optional[str] = Form("Standard Operating Procedure")
+):
+    """Upload and index new organizational SOP/standard locally."""
+    save_path = local_knowledge.base_dir / file.filename
+    content_bytes = await file.read()
+    save_path.write_bytes(content_bytes)
+    local_knowledge.index_file(save_path)
+    return {
+        "status": "INDEXED",
+        "filename": file.filename,
+        "total_documents": len(local_knowledge.indexed_files),
+        "total_chunks": len(local_knowledge.chunks)
+    }
+
+@app.post("/api/workflow/resume")
+async def resume_workflow(req: WorkflowResumeRequest):
+    """Resume a paused workflow following human-in-the-loop conflict resolution or command permissions."""
+    if req.decision == "ALLOW_ALWAYS" or req.resolution == "ALLOW_ALWAYS":
+        prefix = req.command_prefix or (req.decision.split()[-1] if req.decision and " " in req.decision else None)
+        if prefix:
+            session_memory.allowed_command_prefixes.add(prefix.lower().strip("`"))
+
+    session_memory.context.user_decisions.append({
+        "workflow_id": req.workflow_id,
+        "resolution": req.resolution,
+        "decision": req.decision,
+        "command_prefix": req.command_prefix,
+        "timestamp": datetime.now().isoformat()
+    })
+    session_memory.context.workflow_status = "RUNNING"
+    return {
+        "status": "RESUMED",
+        "workflow_id": req.workflow_id,
+        "resolution": req.resolution,
+        "allowed_prefixes": list(session_memory.allowed_command_prefixes)
+    }
 
 # ----------------- Content DNA Engine -----------------
 

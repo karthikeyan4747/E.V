@@ -11,24 +11,35 @@ DEFAULT_MODEL = os.getenv("LOCAL_MODEL", "qwen3:8b")
 
 TASK_PROMPTS = {
     "general": (
-        "You are EV Sovereign, an air-gapped on-premises industrial AI assistant designed for "
-        "refineries, PSUs, defense manufacturing, and sovereign infrastructure. "
-        "Provide direct, factual, mathematically sound, and actionable responses."
+        "You are EV Sovereign, an air-gapped industrial AI assistant. "
+        "Provide direct, factual, mathematically sound, and actionable responses. "
+        "Strictly omit introductory filler (e.g. 'Sure', 'Here is') and closing pleasantries. "
+        "Do not use double dashes (--) or excessive asterisks; use clean headings and bullet points (•)."
     ),
     "code_specialist": (
         "You are an expert industrial software engineer and automation specialist. "
         "Write clean, safe, self-contained, and production-ready code with complete comments, "
-        "error handling, and mathematical accuracy. Return runnable code blocks."
+        "error handling, and mathematical accuracy. Return runnable code blocks with zero filler text."
+    ),
+    "code_generator": (
+        "You are a master Python engineer. Generate complete, executable, production-grade Python code "
+        "adhering to PEP 8 standards with verified logic. Return ONLY code with zero conversational text."
     ),
     "content_dna_extractor": (
         "You are an advanced sovereign document understanding and Content DNA semantic extraction engine. "
-        "Analyze documents, drawings, inspection reports, or text with high precision "
+        "Analyze documents, inspection reports, or text with high precision "
         "and produce a comprehensive, structured JSON representation adhering strictly to the Content DNA specification."
     ),
     "deliverable_generator": (
         "You are an executive deliverable generator for sovereign industrial organizations (PSUs, Refineries, Defense). "
         "Generate formal, publication-ready output tailored to the exact audience, tone, and format requested. "
-        "Include precise facts, tables, step-by-step calculations, and actionable recommendations."
+        "Include precise facts, tables, step-by-step calculations, and actionable recommendations with clean typography."
+    ),
+    "approval_note": (
+        "You are an executive engineering approval note compiler. Generate an authoritative, formal, publication-grade "
+        "Official Approval Note document containing Reference, Date, Subject, 1. Executive Summary, "
+        "2. Technical Findings & Parameters, 3. Risk Assessment, 4. Recommendations, and 5. Sign-off Authorization. "
+        "Do not include conversational filler or messy markdown artifacts."
     ),
     "agent_planner": (
         "You are an autonomous sovereign agent planner. "
@@ -46,21 +57,91 @@ TASK_PROMPTS = {
         "You are the Chief Innovation Engineer. Propose breakthrough optimizations, AI automation pipelines, "
         "energy efficiency gains, and novel sovereign workflows."
     ),
+    "vision": (
+        "You are an expert sovereign computer vision analyst. "
+        "Thoroughly and accurately describe what is shown in the image or video keyframes. "
+        "Identify the primary subjects, objects, people, environment, actions, text, layout, and notable details. "
+        "Be direct, factual, and concise with zero conversational filler."
+    ),
 }
 
+KNOWN_DEFAULT_MODELS = ["auto", "qwen3:8b", "qwen3:4b", "qwen2.5-coder:3b", "gemma3:4b"]
+
+TASK_MODEL_MAPPING = {
+    # Vision & Multimodal tasks -> Gemma 3 multimodal model
+    "vision": ["gemma3:4b", "qwen3:8b", "qwen3:4b"],
+
+    # Code & Math tasks -> Coder specialist
+    "code_specialist": ["qwen2.5-coder:3b", "qwen3:8b", "qwen3:4b"],
+    "code_generator": ["qwen2.5-coder:3b", "qwen3:8b", "qwen3:4b"],
+    "code_debugger": ["qwen2.5-coder:3b", "qwen3:8b", "qwen3:4b"],
+    "math_calculator": ["qwen2.5-coder:3b", "qwen3:8b", "qwen3:4b"],
+    
+    # Document DNA & JSON Parsing -> Gemma 3 or Qwen 3
+    "content_dna_extractor": ["gemma3:4b", "qwen3:8b", "qwen3:4b"],
+    "json_extractor": ["gemma3:4b", "qwen3:8b", "qwen3:4b"],
+    
+    # Executive Deliverables & Approval Notes -> Flagship 8B or Gemma
+    "deliverable_generator": ["qwen3:8b", "gemma3:4b", "qwen3:4b"],
+    "approval_note": ["qwen3:8b", "gemma3:4b", "qwen3:4b"],
+    
+    # Council Deliberation & Complex Planning -> Flagship 8B
+    "architect": ["qwen3:8b", "gemma3:4b", "qwen3:4b"],
+    "critic": ["qwen3:8b", "gemma3:4b", "qwen3:4b"],
+    "innovator": ["qwen3:8b", "gemma3:4b", "qwen3:4b"],
+    "agent_planner": ["qwen3:8b", "qwen3:4b"],
+    
+    # General Synthesis & Chat
+    "general": ["qwen3:8b", "qwen3:4b", "gemma3:4b"],
+    "synthesis": ["qwen3:8b", "qwen3:4b", "gemma3:4b"]
+}
+
+def clean_output_formatting(text: str) -> str:
+    """
+    Remove raw markdown double asterisks, double dashes, '/...', and conversational filler phrases.
+    Produces clean, high-precision industrial output with clean typography.
+    """
+    if not text:
+        return ""
+    
+    # 1. Strip raw '/...' or '/.../' artifacts
+    text = re.sub(r"/\.{2,}/?", "", text)
+    
+    # 2. Clean raw double asterisks (**word**) into clean readable text if standalone
+    text = re.sub(r"\*{3,}", "", text)
+    text = re.sub(r"(?<!\w)\*\*(?!\w)", "", text)
+    
+    # 3. Strip double dashes '--' in body text into clean em-dash ' — '
+    text = re.sub(r"(?<!\-)\-\-(?!\-)", " — ", text)
+    
+    # 4. Strip boilerplate AI filler intro and outro lines
+    filler_patterns = [
+        r"^(?:Sure|Certainly|Here is|Here's|As an AI|As an industrial AI assistant)[^\n]*\n+",
+        r"\n+(?:I hope this helps|Let me know if you need anything else|Feel free to ask)[^\n]*$"
+    ]
+    for fp in filler_patterns:
+        text = re.sub(fp, "", text, flags=re.IGNORECASE).strip()
+        
+    return text.strip()
+
 class SovereignLLM:
-    def __init__(self, base_url: str = OLLAMA_BASE_URL, default_model: str = DEFAULT_MODEL):
+    def __init__(self, base_url: str = OLLAMA_BASE_URL, default_model: str = "auto"):
         self.base_url = base_url.rstrip("/")
         self.default_model = default_model
         self.cached_models: list[str] = []
         self.last_model_check: float = 0
 
+    def set_default_model(self, model_name: str) -> str:
+        if model_name and model_name.strip():
+            self.default_model = model_name.strip()
+        return self.default_model
+
     async def get_available_models(self) -> list[str]:
         now = time.time()
-        if self.cached_models and (now - self.last_model_check < 30):
+        if self.cached_models and (now - self.last_model_check < 15):
             return self.cached_models
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(4.0)) as client:
                 res = await client.get(f"{self.base_url}/api/tags")
                 if res.status_code == 200:
                     data = res.json()
@@ -71,15 +152,24 @@ class SovereignLLM:
                         return models
         except Exception:
             pass
-        return self.cached_models or [self.default_model]
+        return self.cached_models or [m for m in KNOWN_DEFAULT_MODELS if m != "auto"]
 
-    async def get_active_model(self, requested_model: Optional[str] = None) -> str:
-        if requested_model and requested_model.strip():
+    async def get_active_model(self, requested_model: Optional[str] = None, task_type: str = "general") -> str:
+        # If user explicitly requested a specific model (not 'auto'), respect it
+        if requested_model and requested_model.strip() and requested_model.strip().lower() != "auto":
             return requested_model.strip()
-        models = await self.get_available_models()
-        if self.default_model in models:
+        
+        # If default_model is set to a specific model (not 'auto'), respect it
+        if self.default_model and self.default_model.lower() != "auto":
             return self.default_model
-        return models[0] if models else self.default_model
+
+        # Intelligent Task-Based Routing:
+        available = await self.get_available_models()
+        candidates = TASK_MODEL_MAPPING.get(task_type, ["qwen3:8b", "qwen3:4b", "gemma3:4b"])
+        for cand in candidates:
+            if cand in available:
+                return cand
+        return available[0] if available else "qwen3:8b"
 
     async def generate(
         self,
@@ -87,6 +177,7 @@ class SovereignLLM:
         system: Optional[str] = None,
         task_type: str = "general",
         model: Optional[str] = None,
+        images: Optional[list[str]] = None,
         temperature: float = 0.2,
         json_format: bool = False,
         timeout: Optional[float] = None,
@@ -94,8 +185,10 @@ class SovereignLLM:
         num_ctx: Optional[int] = None,
         **kwargs
     ) -> dict[str, Any]:
-        """Generate completion from local Qwen 8B via Ollama."""
-        selected_model = await self.get_active_model(model)
+        """Generate completion from local models (Qwen, Gemma 3) via Ollama."""
+        if images and task_type == "general":
+            task_type = "vision"
+        selected_model = await self.get_active_model(model, task_type=task_type)
         system_prompt = system or TASK_PROMPTS.get(task_type, TASK_PROMPTS["general"])
         
         start_t = time.time()
@@ -111,6 +204,14 @@ class SovereignLLM:
                 "num_thread": 8,
             }
         }
+        if images:
+            clean_images = []
+            for img in images:
+                if isinstance(img, str) and ";base64," in img:
+                    clean_images.append(img.split(";base64,", 1)[1].strip())
+                elif isinstance(img, str):
+                    clean_images.append(img.strip())
+            payload["images"] = clean_images
         if json_format:
             payload["format"] = "json"
 
@@ -125,6 +226,8 @@ class SovereignLLM:
                 if res.status_code == 200:
                     data = res.json()
                     response_text = data.get("response", "").strip()
+                    if not json_format:
+                        response_text = clean_output_formatting(response_text)
                     comp_est = len(response_text) // 4
                     
                     network_monitor.log_call(
@@ -167,12 +270,16 @@ class SovereignLLM:
             # Sovereign resilient fallback generator
             fallback_text = ""
             if json_format:
-                if "architect" in prompt.lower() or "council" in prompt.lower():
+                if "architect" in prompt.lower() or "council" in prompt.lower() or task_type in ["architect", "critic", "innovator"]:
+                    topic_m = re.search(r"USER TOPIC:\s*\"?([^\n\"]+)", prompt, re.IGNORECASE)
+                    topic_str = topic_m.group(1).strip() if topic_m else "the requested technical system"
+                    if len(topic_str) > 70:
+                        topic_str = topic_str[:70] + "..."
                     fallback_text = json.dumps({
-                        "architect": "Modular on-premises integration verified with air-gapped refinery control systems and ASME B31.3 compliance.",
-                        "critic": "Secondary containment, real-time vibration sensing, and emergency bypass lines are strictly mandatory before live cutover.",
-                        "innovator": "Variable frequency drive automated loops optimize pump curve operations and deliver 22% electrical power savings.",
-                        "consensus": "Council approves proposal with mandatory condition for baseline ultrasonic thickness and vibration trip testing."
+                        "architect": f"Architectural evaluation confirms feasibility for {topic_str}, verifying modular integration and standard interface compliance.",
+                        "critic": f"Risk assessment identifies potential edge-case failure modes and operational constraints for {topic_str}; safety interlocks and monitoring are mandatory.",
+                        "innovator": f"Modern engineering optimization unlocks significant efficiency gains and automated telemetry control loops for {topic_str}.",
+                        "consensus": f"Council reaches unified consensus approving {topic_str} subject to continuous operational telemetry validation and boundary testing."
                     })
                 elif "deliverable" in prompt.lower() or "slides" in prompt.lower() or task_type == "deliverable_generator":
                     topic_m = re.search(r"USER REQUEST:\s*(.*?)(?:\n\n|ATTACHED|RESPOND|$)", prompt, re.DOTALL | re.IGNORECASE)
@@ -400,6 +507,39 @@ def execute_main():
 if __name__ == '__main__':
     execute_main()
 """
+                elif re.search(r"\b(javascript|node|typescript)\b|\.(?:js|jsx|ts|tsx)\b", p_low):
+                    fallback_text = """// JavaScript / Node.js Module
+function run() {
+    console.log("Module executed successfully.");
+}
+
+run();
+"""
+                elif re.search(r"\b(bash|shell)\b|\.(?:sh|bash)\b", p_low):
+                    fallback_text = """#!/usr/bin/env bash
+# Shell Script
+echo "Module executed successfully."
+"""
+                elif re.search(r"\b(c\+\+|cpp|clang|gcc)\b|\b(?:in c| c )\b|\.(?:c|cpp|h|hpp)\b", p_low):
+                    fallback_text = """/* C / C++ Module */
+#include <stdio.h>
+
+int main() {
+    printf("Module executed successfully.\\n");
+    return 0;
+}
+"""
+                elif re.search(r"\b(html|webpage)\b|\.(?:html|htm)\b", p_low):
+                    fallback_text = """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Sovereign Workbench</title></head>
+<body><h1>Module Executed Successfully</h1></body>
+</html>
+"""
+                elif re.search(r"\b(css|stylesheet)\b|\.css\b", p_low):
+                    fallback_text = """/* Sovereign Stylesheet */
+body { font-family: sans-serif; margin: 0; padding: 20px; }
+"""
                 elif "python" in p_low or "code" in p_low:
                     fallback_text = """# Python Module
 def run():
@@ -432,7 +572,7 @@ if __name__ == '__main__':
         **kwargs
     ) -> dict[str, Any]:
         """Chat completion using local Qwen 8B via Ollama API."""
-        selected_model = await self.get_active_model(model)
+        selected_model = await self.get_active_model(model, task_type=task_type)
         system_content = TASK_PROMPTS.get(task_type, TASK_PROMPTS["general"])
         
         formatted_messages = []
@@ -473,6 +613,8 @@ if __name__ == '__main__':
                     data = res.json()
                     msg = data.get("message", {})
                     response_text = msg.get("content", "").strip()
+                    if not json_format:
+                        response_text = clean_output_formatting(response_text)
                     comp_est = len(response_text) // 4
 
                     network_monitor.log_call(

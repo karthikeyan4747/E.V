@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from autonomous_engine import autonomous_agent, session_memory
+from sovereign_llm import sovereign_llm
 from content_dna import content_dna_manager
 from agent_sandbox import code_sandbox
 from deliverables import deliverables_engine
@@ -348,12 +349,340 @@ async def run_all_tests():
     assert "1075" in sandbox_ev.get("stdout", "") or "250" in sandbox_ev.get("stdout", ""), "Math calculation did not process the user's exact inputs"
     print("  -> TEST 19 PASSED: Math calculation verified exact user inputs in sandbox.")
 
+    # -------------------------------------------------------------
+    # TEST 20: Manual Model Switching & Dynamic Registry
+    # -------------------------------------------------------------
+    print("\n[TEST 20] Testing Manual Model Switching (gemma3:4b, qwen2.5-coder:3b, qwen3:4b, qwen3:8b)...")
+    models = await sovereign_llm.get_available_models()
+    print(f"  ✓ Available models: {models}")
+    assert len(models) >= 1, "No models returned"
+
+    # Test switching to coder model
+    sovereign_llm.set_default_model("qwen2.5-coder:3b")
+    assert sovereign_llm.default_model == "qwen2.5-coder:3b", "Failed to switch to qwen2.5-coder:3b"
+    active_mod = await sovereign_llm.get_active_model()
+    print(f"  ✓ Switched active model to: {active_mod}")
+
+    # Test switching to gemma model
+    sovereign_llm.set_default_model("gemma3:4b")
+    assert sovereign_llm.default_model == "gemma3:4b", "Failed to switch to gemma3:4b"
+    active_mod = await sovereign_llm.get_active_model()
+    print(f"  ✓ Switched active model to: {active_mod}")
+
+    # Test streaming execution with explicit model override
+    events_20 = []
+    async for ev in autonomous_agent.execute_stream(prompt="Explain the refinery air-gap protocol.", model="qwen3:4b"):
+        events_20.append(ev)
+    assert sovereign_llm.default_model == "qwen3:4b", "execute_stream did not update model to qwen3:4b"
+    print(f"  ✓ Stream execution succeeded with model: {sovereign_llm.default_model}")
+
+    # -------------------------------------------------------------
+    # TEST 21: Intelligent Task-Based Model Routing
+    # -------------------------------------------------------------
+    print("\n[TEST 21] Testing Intelligent Task-Based Model Routing (Auto Mode)...")
+    sovereign_llm.set_default_model("auto")
+    code_mod = await sovereign_llm.get_active_model(task_type="code_generator")
+    dna_mod = await sovereign_llm.get_active_model(task_type="content_dna_extractor")
+    council_mod = await sovereign_llm.get_active_model(task_type="architect")
+    print(f"  ✓ Code Task routed to: {code_mod}")
+    print(f"  ✓ DNA Task routed to: {dna_mod}")
+    print(f"  ✓ Council Task routed to: {council_mod}")
+    assert code_mod in ["qwen2.5-coder:3b", "qwen3:8b", "qwen3:4b"], "Code routing failed"
+    assert dna_mod in ["gemma3:4b", "qwen3:8b", "qwen3:4b"], "DNA routing failed"
+    print("  -> TEST 21 PASSED: Intelligent task-based model selection verified.")
+
+    # -------------------------------------------------------------
+    # TEST 22: Formal Approval Note Output with Clean Typography
+    # -------------------------------------------------------------
+    print("\n[TEST 22] Testing Official Approval Note Generation with Clean Output...")
+    events_22 = []
+    tokens_22 = []
+    async for ev in autonomous_agent.execute_stream(prompt="Create an official approval note for installing high-temperature clamp enclosure on line 14-P-102"):
+        events_22.append(ev)
+        if ev.get("type") == "token":
+            tokens_22.append(ev.get("token", ""))
+
+    full_note = "".join(tokens_22)
+    print(f"  ✓ Approval Note excerpt:\n{full_note[:300]}...")
+    assert "OFFICIAL APPROVAL NOTE" in full_note, "Header missing from approval note"
+    assert "Executive Summary" in full_note, "Executive summary section missing"
+    assert "Sign-Off Authorization" in full_note or "Sign-Off" in full_note, "Sign-off section missing"
+    assert "--" not in full_note, "Raw double dashes present in output"
+    print("  -> TEST 22 PASSED: Formal approval note output verified with clean typography.")
+
+    # -------------------------------------------------------------
+    # TEST 23: Predefined Workflow Selection & Tool Safety Validator
+    # -------------------------------------------------------------
+    print("\n[TEST 23] Testing Predefined Workflow Registry & Tool Safety Validator...")
+    from workflow_registry import WORKFLOWS, workflow_validator
+
+    wf_coding, _ = autonomous_agent.route_workflow("Fix the syntax error in karthi.py and verify in sandbox")
+    wf_deliv, _ = autonomous_agent.route_workflow("Make an executive Word approval note from this report")
+    wf_know, _ = autonomous_agent.route_workflow("What is the mandatory derating limit for Line 14-P-102 under SOP-CDU-04?")
+    wf_calc, _ = autonomous_agent.route_workflow("Calculate the remaining useful life using ASME B31.3 formula")
+    wf_council, _ = autonomous_agent.route_workflow("Convene the Council to debate trade-offs of clamp vs cold repair")
+
+    print(f"  ✓ Coding prompt mapped to: {wf_coding}")
+    print(f"  ✓ Deliverables prompt mapped to: {wf_deliv}")
+    print(f"  ✓ Knowledge prompt mapped to: {wf_know}")
+    print(f"  ✓ Calc prompt mapped to: {wf_calc}")
+    print(f"  ✓ Council prompt mapped to: {wf_council}")
+
+    assert wf_coding == "CODING", f"Expected CODING, got {wf_coding}"
+    assert wf_deliv == "CONTENT_TO_DELIVERABLE", f"Expected CONTENT_TO_DELIVERABLE, got {wf_deliv}"
+    assert wf_know == "KNOWLEDGE_QUERY", f"Expected KNOWLEDGE_QUERY, got {wf_know}"
+    assert wf_calc == "ENGINEERING_CALCULATION", f"Expected ENGINEERING_CALCULATION, got {wf_calc}"
+    assert wf_council == "COUNCIL_ANALYSIS", f"Expected COUNCIL_ANALYSIS, got {wf_council}"
+
+    # Verify tool safety validator enforces allowed tools
+    assert workflow_validator.validate_tool_execution("CODING", "code_editor") is True
+    assert workflow_validator.validate_tool_execution("CODING", "sandbox") is True
+    
+    # Disallowed tool in CODING (e.g. document_generator) must raise PermissionError
+    blocked = False
+    try:
+        workflow_validator.validate_tool_execution("CODING", "document_generator")
+    except PermissionError as e:
+        blocked = True
+        print(f"  ✓ Safety Validator successfully blocked unapproved tool: {e}")
+    assert blocked, "Tool safety validator failed to block unauthorized tool"
+    print("  -> TEST 23 PASSED: Predefined workflow selection and tool safety validation verified.")
+
+    # -------------------------------------------------------------
+    # TEST 24: 100% On-Premises Local Knowledge Retrieval & Provenance
+    # -------------------------------------------------------------
+    print("\n[TEST 24] Testing Local Knowledge Base Search & Source Provenance...")
+    from local_knowledge import local_knowledge
+
+    kb_status = local_knowledge.get_status()
+    print(f"  ✓ Local Knowledge Base Status: {kb_status['total_documents']} SOPs indexed, {kb_status['total_chunks']} chunks")
+    assert kb_status["air_gapped"] is True
+    assert kb_status["total_documents"] >= 3
+
+    search_query = "What is the pressure derating procedure and thickness limit for Line 14-P-102?"
+    k_results = local_knowledge.search(search_query, top_k=2)
+    assert len(k_results) > 0, "No results returned from local knowledge base"
+    top_res = k_results[0]
+    print(f"  ✓ Top SOP Match: {top_res.source_document}")
+    print(f"  ✓ Section: {top_res.source_section} (Page {top_res.source_page})")
+    print(f"  ✓ Confidence: {top_res.confidence * 100:.1f}%")
+    print(f"  ✓ Excerpt: {top_res.text[:120]}...")
+    assert "SOP-CDU-04" in top_res.source_document or "SOP-ENGR-301" in top_res.source_document
+    assert top_res.confidence >= 0.5
+    assert top_res.claim_id.startswith("SOP-")
+    print("  -> TEST 24 PASSED: Local knowledge search returns verified provenance with zero cloud calls.")
+
+    # -------------------------------------------------------------
+    # TEST 25: Dynamic Execution Plan with Inspectable Step Details Schema
+    # -------------------------------------------------------------
+    print("\n[TEST 25] Testing Execution Plan Formulation with Detailed Step Schema...")
+    test_prompt = "Perform document analysis and check for compliance with our piping SOP"
+    plan = await autonomous_agent.formulate_plan(prompt=test_prompt)
+    
+    print(f"  ✓ Generated Plan: {plan['title']} ({len(plan['steps'])} steps)")
+    print(f"  ✓ Workflow: {plan['workflow']}")
+    print(f"  ✓ Risk Level: {plan['risk_level']}")
+    assert len(plan["steps"]) >= 3
+    assert plan["workflow"] in ["DOCUMENT_ANALYSIS", "KNOWLEDGE_QUERY"]
+
+    first_step = plan["steps"][0]
+    required_keys = ["step_id", "title", "status", "what_doing", "why_necessary", "input_used", "tool_used", "verification_status"]
+    for k in required_keys:
+        assert k in first_step, f"Step schema missing key: {k}"
+    print(f"  ✓ Step 1: '{first_step['title']}' | Tool: {first_step['tool_used']}")
+    print(f"  ✓ Execution Reasoning: '{first_step['why_necessary']}'")
+    print("  -> TEST 25 PASSED: Execution plan generates transparent, inspectable step schema.")
+
+    # -------------------------------------------------------------
+    # TEST 26: Human-in-the-Loop Conflict Pause and Resume
+    # -------------------------------------------------------------
+    print("\n[TEST 26] Testing Human-in-the-Loop Conflict Pause and Resume...")
+    conflicting_file = {
+        "name": "Inspection_Report.txt",
+        "content": "Line 14-P-102 operating at 18.5 bar. Measured minimum wall thickness is 6.8 mm. Vibration amplitude is 7.4 mm/s."
+    }
+    events_26 = []
+    user_action_event = None
+    async for ev in autonomous_agent.execute_stream(
+        prompt="Analyze inspection report and verify against SOP-CDU-04 derating procedures",
+        attached_files=[conflicting_file]
+    ):
+        events_26.append(ev)
+        if ev.get("type") == "user_input_required":
+            user_action_event = ev
+
+    assert user_action_event is not None, "user_input_required event was not emitted on critical parameter conflict"
+    print(f"  ✓ Conflict Pause Event Received: {user_action_event['title']}")
+    print(f"  ✓ Reason: {user_action_event['reason']}")
+    print(f"  ✓ Available Options: {[opt['label'] for opt in user_action_event['options']]}")
+    
+    # Resume simulation
+    session_memory.context.user_decisions.append({
+        "workflow_id": session_memory.context.workflow_id,
+        "resolution": "SOP_12_BAR",
+        "decision": "Applied SOP-CDU-04 mandatory derating limit of 12.0 bar."
+    })
+    session_memory.context.workflow_status = "RUNNING"
+    assert len(session_memory.context.user_decisions) > 0
+    print("  ✓ Workflow successfully resumed with user decision recorded in session context.")
+    print("  -> TEST 26 PASSED: Human-in-the-loop conflict pause and resume verified.")
+
+    print("\n[TEST 27] Testing Target File Switching (prompt randomnumber.py overrides previous active file karthi.py)...")
+    prev_active_file = "karthi.py"
+    switch_prompt = "randomnumber.py write a random number generator function"
+    
+    # 1. Target file locator test with active_file present
+    target_path, _ = autonomous_agent.locate_workspace_target_file(switch_prompt, ".", active_file=prev_active_file)
+    assert target_path is not None and Path(target_path).name == "randomnumber.py", f"Expected randomnumber.py, got {target_path}"
+    print(f"  ✓ Target file locator resolved: {Path(target_path).name} (overrode {prev_active_file})")
+
+    # 2. Plan formulation test
+    switch_plan = await autonomous_agent.formulate_plan(switch_prompt, ".", active_file=prev_active_file)
+    assert any("randomnumber.py" in s["title"] for s in switch_plan["steps"]), "Plan steps did not reference randomnumber.py"
+    print(f"  ✓ Execution plan formulated for: randomnumber.py")
+
+    # 3. Stream execution test
+    modified_names = []
+    async for ev in autonomous_agent.execute_stream(switch_prompt, active_file=prev_active_file):
+        if ev.get("type") == "file_modified":
+            modified_names.append(ev.get("filename"))
+    
+    assert "randomnumber.py" in modified_names, f"Expected randomnumber.py in modified files, got {modified_names}"
+    assert "karthi.py" not in modified_names, f"karthi.py should NOT have been modified, got {modified_names}"
+    print(f"  ✓ Execution stream modified: {modified_names} (karthi.py untouched)")
+    
+    # Cleanup created test file
+    rn_path = Path("randomnumber.py")
+    if rn_path.exists():
+        rn_path.unlink()
+    print("  -> TEST 27 PASSED: Prompt filename dynamically overrides previously active workspace file.")
+
+    print("\n[TEST 28] Testing Host Terminal Error Check & 100% UI Checklist Completion...")
+    terminal_prompt = "use the terminal of the host pc to check for errors in karthi.py"
+    
+    # 1. Intent classification
+    term_intent = autonomous_agent.classify_workflow_intent(terminal_prompt)
+    assert term_intent == "CODE_DEBUG", f"Expected CODE_DEBUG, got {term_intent}"
+    print("  ✓ Intent routed to: CODE_DEBUG")
+
+    # 2. Plan steps completeness
+    term_plan = await autonomous_agent.formulate_plan(terminal_prompt, ".")
+    expected_step_ids = {s["step_id"] for s in term_plan["steps"]}
+    
+    # 3. Stream execution and check step completions
+    completed_steps = set()
+    verified_passed = False
+    async for ev in autonomous_agent.execute_stream(terminal_prompt):
+        if ev.get("type") == "step_completed":
+            completed_steps.add(ev.get("step_id"))
+        elif ev.get("type") == "verification_passed":
+            verified_passed = True
+            
+    assert verified_passed, "verification_passed was not emitted for host terminal check"
+    assert expected_step_ids.issubset(completed_steps), f"Not all planned steps were marked completed! Missing: {expected_step_ids - completed_steps}"
+    print(f"  ✓ All {len(term_plan['steps'])} planned steps completed: {sorted(list(completed_steps))}")
+    print("  -> TEST 28 PASSED: Host terminal check executed cleanly and all checklist boxes ticked.")
+
+    print("\n[TEST 29] Testing AI Action Classifier & Fail-Closed Enum Router...")
+    from autonomous_engine import SovereignAction
+    
+    # 1. Test JS creation action
+    res_js = await autonomous_agent.classify_action_with_ai("write an express server in server.js")
+    assert res_js["action"] in [SovereignAction.WRITE_CODE.value, SovereignAction.EDIT_CODE.value]
+    assert res_js["target_file"] == "server.js"
+    assert res_js["language"] == "javascript"
+    print(f"  ✓ Classified JS action: {res_js['action']} -> {res_js['target_file']} ({res_js['language']})")
+
+    # 2. Test Shell script action
+    res_sh = await autonomous_agent.classify_action_with_ai("write a shell script deploy.sh to build the app")
+    assert res_sh["target_file"] == "deploy.sh"
+    assert res_sh["language"] == "bash"
+    print(f"  ✓ Classified Shell action: {res_sh['action']} -> {res_sh['target_file']} ({res_sh['language']})")
+
+    # 3. Test Council Debate action
+    res_council = await autonomous_agent.classify_action_with_ai("convene the council to debate architecture")
+    assert res_council["action"] == SovereignAction.COUNCIL_DEBATE.value
+    assert res_council["workflow"] == "COUNCIL_ANALYSIS"
+    print(f"  ✓ Classified Council action: {res_council['action']} -> {res_council['workflow']}")
+
+    # 4. Test Path Traversal Protection
+    cand_safe = autonomous_agent.extract_target_filename("../../etc/passwd")
+    assert not cand_safe or ".." not in cand_safe
+    print("  ✓ Path traversal protection verified: no directory escapes permitted.")
+    print("  -> TEST 29 PASSED: AI Action Classifier correctly routes structured intents with strict schema.")
+
+    print("\n[TEST 30] Testing Scoped Multi-Language Sandbox & Pre-Execution Confirmation Modal...")
+    # 1. Test Scoped Multi-Language Sandbox Execution (Python, JS, Bash, C, HTML)
+    from agent_sandbox import code_sandbox
+    
+    # Python
+    py_res = code_sandbox.execute_code("print('Python OK')", language="python")
+    assert py_res["exit_code"] == 0, f"Python failed: {py_res}"
+    print("  ✓ Python execution: Exit Code 0")
+    
+    # JavaScript (Node.js)
+    js_res = code_sandbox.execute_code("console.log('Node JS OK')", language="javascript")
+    assert js_res["exit_code"] == 0, f"Node.js failed: {js_res}"
+    print("  ✓ JavaScript (Node.js) execution: Exit Code 0")
+    
+    # Bash
+    bash_res = code_sandbox.execute_code("echo 'Bash OK'", language="bash")
+    assert bash_res["exit_code"] == 0, f"Bash failed: {bash_res}"
+    print("  ✓ Bash execution: Exit Code 0")
+
+    # C / Clang
+    c_res = code_sandbox.execute_code("#include <stdio.h>\nint main(){ return 0; }", language="c")
+    assert c_res["exit_code"] == 0, f"C failed: {c_res}"
+    print("  ✓ C (GCC/Clang) static verification: Exit Code 0")
+
+    # HTML / CSS
+    html_res = code_sandbox.execute_code("<!DOCTYPE html><html><body><h1>EV</h1></body></html>", filename="index.html")
+    assert html_res["exit_code"] == 0, f"HTML failed: {html_res}"
+    print("  ✓ HTML static verification: Exit Code 0")
+
+    # 2. Test Pre-Execution Confirmation Modal & Session Caching
+    session_memory.clear()
+    
+    # Run with auto_approve=False: Must yield permission_required modal event
+    perm_events = []
+    async for ev in autonomous_agent.execute_stream("write a file named server.js with console.log('hi')", auto_approve=False):
+        perm_events.append(ev)
+    
+    perm_event = next((e for e in perm_events if e.get("type") == "permission_required"), None)
+    assert perm_event is not None, f"Expected permission_required event, got: {[e.get('type') for e in perm_events]}"
+    assert "Do you want to allow me to write" in perm_event["title"]
+    assert len(perm_event["options"]) == 3
+    print("  ✓ Pre-Execution Approval Modal emitted with exact 3-option structure:")
+    for opt in perm_event["options"]:
+        print(f"    - [{opt['id']}] {opt['label']}")
+
+    # Simulate Option 2: "Yes, and don't ask again for commands that start with write"
+    session_memory.allowed_command_prefixes.add("write")
+    
+    # Subsequent action should execute directly without prompting again
+    cached_events = []
+    async for ev in autonomous_agent.execute_stream("write a file named helper.js with console.log('hi')", auto_approve=False):
+        cached_events.append(ev)
+    
+    cached_perm = next((e for e in cached_events if e.get("type") == "permission_required"), None)
+    assert cached_perm is None, "Subsequent command should have been auto-approved via session cache!"
+    print("  ✓ Session permission cache verified: 'write' prefix bypassed subsequent prompts.")
+
+    # Cleanup any artifacts
+    for f in ["server.js", "helper.js"]:
+        p = Path(f)
+        if p.exists():
+            p.unlink()
+
+    print("  -> TEST 30 PASSED: Multi-language sandbox execution & Pre-Execution Confirmation Modal verified.")
+
     print("\n===================================================================")
-    print("  ALL 19 TESTS PASSED! FULLY DYNAMIC SOVEREIGN ORCHESTRATION VERIFIED.")
+    print("  ALL 30 TESTS PASSED! SOVEREIGN WORKFLOWS & LOCAL KNOWLEDGE FULLY VERIFIED.")
     print("===================================================================")
 
 if __name__ == "__main__":
     asyncio.run(run_all_tests())
+
 
 
 

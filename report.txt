@@ -1,0 +1,27 @@
+PUMP INSPECTION REPORT
+
+Equipment: Cooling Water Pump P-204
+Inspection Date: 18 August 2026
+Flow Rating: 480 m³/h
+Maximum Permitted Flow: 500 m³/h
+
+Current Findings:
+* Vibration: 7.8 mm/s RMS
+* Bearing Temperature: 82°C
+* Minor oil leakage observed
+* Mechanical seal shows wear
+
+Previous Inspection:
+12 June 2026 — Vibration: 5.2 mm/s, Temperature: 68°C
+
+Maintenance Log:
+15 June 2026 — Vibration: 7.4 mm/s, Temperature: 76°C
+
+Risk Assessment:
+Current report: MEDIUM risk
+Separate assessment: HIGH risk
+
+Recommendation:
+Replace the drive-end bearing and mechanical seal. Reduce flow below 500 m³/h until maintenance is completed.
+
+Source records contain conflicting measurements and risk classifications and must be verified before final approval.

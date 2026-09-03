@@ -10,6 +10,7 @@ export const sovereignAPI = {
   // Health & Models
   getHealth: () => api.get('/health').then(r => r.data),
   getModels: () => api.get('/api/models').then(r => r.data),
+  setActiveModel: (model) => api.post('/api/models/set', { model }).then(r => r.data),
   getNetworkAudit: () => api.get('/api/network/audit').then(r => r.data),
 
   // Chat & LLM
@@ -116,4 +117,11 @@ export const sovereignAPI = {
   readWorkspaceFile: (filePath) => api.get('/api/project/read_file', { params: { file_path: filePath } }).then(r => r.data),
   writeWorkspaceFile: (filePath, content) => api.post('/api/project/write_file', { file_path: filePath, content }).then(r => r.data),
   searchWorkspace: (query) => api.get('/api/project/search', { params: { query } }).then(r => r.data),
+
+  // Local Knowledge Base & Predefined Workflows
+  getKnowledgeStatus: () => api.get('/api/knowledge/status').then(r => r.data),
+  searchKnowledge: (query, topK = 3) => api.post('/api/knowledge/search', { query, top_k: topK }).then(r => r.data),
+  resumeWorkflow: (workflowId, resolution, decision = null, command_prefix = null) => 
+    api.post('/api/workflow/resume', { workflow_id: workflowId, resolution, decision, command_prefix }).then(r => r.data),
 }
+

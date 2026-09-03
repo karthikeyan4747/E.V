@@ -17,6 +17,7 @@ export function App() {
   const [isNetworkModalOpen, setIsNetworkModalOpen] = useState(false)
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false)
   const [activeModel, setActiveModel] = useState('qwen3:8b')
+  const [availableModels, setAvailableModels] = useState(['qwen3:8b', 'qwen3:4b', 'qwen2.5-coder:3b', 'gemma3:4b'])
   const [workspaceName, setWorkspaceName] = useState('EV')
   const [activeFile, setActiveFile] = useState(null)
   const [networkAudit, setNetworkAudit] = useState(null)
@@ -24,17 +25,27 @@ export function App() {
   
   // Global AI Inferencing & Loading State
   const [isInferencing, setIsInferencing] = useState(false)
-  const [inferenceTask, setInferenceTask] = useState('Local Qwen 8B Reasoning...')
+  const [inferenceTask, setInferenceTask] = useState('Local Qwen Reasoning...')
 
-  const handleSetInferencing = useCallback((loading, task = 'Local Qwen 8B Reasoning...') => {
+  const handleSetInferencing = useCallback((loading, task = 'Local Qwen Reasoning...') => {
     setIsInferencing(Boolean(loading))
     if (task) setInferenceTask(task)
   }, [])
 
+  const handleSelectModel = async (modelName) => {
+    setActiveModel(modelName)
+    try {
+      await sovereignAPI.setActiveModel(modelName)
+    } catch (err) {
+      console.error('Failed to set active model on backend', err)
+    }
+  }
+
   useEffect(() => {
-    sovereignAPI.getHealth()
+    sovereignAPI.getModels()
       .then(res => {
-        if (res.active_model) setActiveModel(res.active_model)
+        if (res.models && res.models.length > 0) setAvailableModels(res.models)
+        if (res.active) setActiveModel(res.active)
       })
       .catch(err => console.error('Local backend connecting...', err))
 
@@ -73,11 +84,13 @@ export function App() {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#070a12] text-slate-100 select-none overflow-hidden font-sans">
-      {/* Codex Sovereign Top Bar */}
+      {/* Codex Sovereign Top Bar with Interactive Model Switcher */}
       <TopBar
         activeView={activeCapabilityDrawer || 'agent'}
         onViewChange={handleNavClick}
         activeModel={activeModel}
+        availableModels={availableModels}
+        onSelectModel={handleSelectModel}
         workspaceName={workspaceName}
         onOpenNetworkModal={() => setIsNetworkModalOpen(true)}
         onOpenProjectFolder={() => setIsProjectModalOpen(true)}
@@ -104,6 +117,7 @@ export function App() {
             onSetInferencing={handleSetInferencing}
             activeWorkspace={workspaceName}
             activeFile={activeFile}
+            activeModel={activeModel}
           />
 
           {/* Contextual Capability Inspector Drawer (Opens side-by-side on demand without leaving Chat) */}
