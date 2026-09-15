@@ -1178,6 +1178,13 @@ class AutonomousSovereignAgent:
                 else:
                     return f"{cand}.py"
 
+        # 3. Descriptive script pattern (e.g. "random number generator", "random generator")
+        concept_m = re.search(r"\b(?:debug|fix|write|create|make|run|check)?\s*(?:the|a|this|my)?\s*([a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+){1,2}\s+(?:generator|script|calculator|parser|scraper|module))\b", prompt, re.IGNORECASE)
+        if concept_m:
+            raw_c = concept_m.group(1).strip().lower()
+            clean_name = re.sub(r"\s+", "_", raw_c)
+            return f"{clean_name}.py"
+
         return None
 
     def locate_workspace_target_file(
@@ -1212,7 +1219,25 @@ class AutonomousSovereignAgent:
             # If target file does not yet exist on disk, return target location so engine can create/write it
             return str(cand), ""
 
-        # 2. Only if NO file is explicitly named in prompt, use editor active_file
+        # 2. Check if prompt keywords match existing files on disk
+        words = [w.lower() for w in re.findall(r"\b[a-zA-Z0-9_]+\b", prompt) if len(w) > 3 and w.lower() not in ["this", "that", "file", "code", "script", "test", "debug", "check", "inspect", "error", "errors", "with", "from", "into"]]
+        for w in words:
+            for ext in [".py", ".js", ".ts", ".html", ".css", ".sh", ".c", ".cpp"]:
+                name = f"{w}{ext}"
+                cand = ws_root / name
+                if cand.is_file():
+                    try:
+                        return str(cand), cand.read_text(encoding="utf-8", errors="replace")
+                    except Exception:
+                        return str(cand), ""
+                for sub in ws_root.rglob(name):
+                    if sub.is_file() and not any(part.startswith((".", "venv", "__pycache__", "node_modules", "dist", "build")) for part in sub.parts):
+                        try:
+                            return str(sub), sub.read_text(encoding="utf-8", errors="replace")
+                        except Exception:
+                            return str(sub), ""
+
+        # 3. Only if NO file is explicitly named in prompt, use editor active_file
         if active_file:
             try:
                 p = Path(active_file)
@@ -1223,17 +1248,6 @@ class AutonomousSovereignAgent:
                     return str(cand), cand.read_text(encoding="utf-8", errors="replace")
             except Exception:
                 pass
-
-        # 3. Look for existing files matching prompt keywords
-        words = [w for w in re.findall(r"\b[a-zA-Z0-9_]+\b", prompt) if len(w) > 3]
-        for w in words:
-            name = f"{w}.py"
-            cand = ws_root / name
-            if cand.is_file():
-                return str(cand), cand.read_text(encoding="utf-8", errors="replace")
-            for sub in ws_root.rglob(name):
-                if sub.is_file() and not any(part.startswith((".", "venv", "__pycache__", "node_modules", "dist", "build")) for part in sub.parts):
-                    return str(sub), sub.read_text(encoding="utf-8", errors="replace")
 
         # 4. Fallback to pythonnn.py if it exists
         default_file = ws_root / "pythonnn.py"

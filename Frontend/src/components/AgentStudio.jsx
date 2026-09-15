@@ -112,6 +112,7 @@ export function AgentStudio({
   onSetInferencing, 
   activeWorkspace = 'EV',
   activeFile = null,
+  onFileSelect = null,
   activeModel = 'qwen3:8b'
 }) {
   // Session / Multi-Chat State
@@ -182,6 +183,21 @@ export function AgentStudio({
       console.warn('LocalStorage save failed:', err)
     }
   }, [sessions, activeSessionId])
+
+  // Auto-focus and pre-populate prompt when activeFile is selected for debugging
+  useEffect(() => {
+    if (activeFile) {
+      const fname = activeFile.filename || activeFile.name
+      if (fname) {
+        setPrompt(prev => {
+          if (!prev || prev.trim() === '' || prev.startsWith('Debug and inspect')) {
+            return `Debug and inspect ${fname} for errors and performance improvements`
+          }
+          return prev
+        })
+      }
+    }
+  }, [activeFile])
 
   // Sync current active session state when switching chats
   const switchSession = useCallback((targetId) => {

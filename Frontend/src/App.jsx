@@ -9,6 +9,7 @@ import { CouncilView } from './components/CouncilView'
 import { DeliverablesViewer } from './components/DeliverablesViewer'
 import { NetworkMonitorModal } from './components/NetworkMonitorModal'
 import { ProjectSelectorModal } from './components/ProjectSelectorModal'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { sovereignAPI } from './services/api'
 import { ShieldCheck, Cpu, Database, Activity, Loader2, X, Maximize2, Minimize2 } from 'lucide-react'
 
@@ -108,17 +109,20 @@ export function App() {
 
         {/* Central Conversational Cockpit (ALWAYS Active and Connected) */}
         <main className="flex-1 flex overflow-hidden relative">
-          <AgentStudio 
-            onOpenDeliverables={() => setActiveCapabilityDrawer('deliverables')}
-            onOpenCouncil={() => setActiveCapabilityDrawer('council')}
-            onOpenWorkspace={() => setActiveCapabilityDrawer('workspace')}
-            onOpenDNA={() => setActiveCapabilityDrawer('dna')}
-            onOpenSandbox={() => setActiveCapabilityDrawer('sandbox')}
-            onSetInferencing={handleSetInferencing}
-            activeWorkspace={workspaceName}
-            activeFile={activeFile}
-            activeModel={activeModel}
-          />
+          <ErrorBoundary onReset={() => setActiveFile(null)}>
+            <AgentStudio 
+              onOpenDeliverables={() => setActiveCapabilityDrawer('deliverables')}
+              onOpenCouncil={() => setActiveCapabilityDrawer('council')}
+              onOpenWorkspace={() => setActiveCapabilityDrawer('workspace')}
+              onOpenDNA={() => setActiveCapabilityDrawer('dna')}
+              onOpenSandbox={() => setActiveCapabilityDrawer('sandbox')}
+              onSetInferencing={handleSetInferencing}
+              activeWorkspace={workspaceName}
+              activeFile={activeFile}
+              onFileSelect={setActiveFile}
+              activeModel={activeModel}
+            />
+          </ErrorBoundary>
 
           {/* Contextual Capability Inspector Drawer (Opens side-by-side on demand without leaving Chat) */}
           {activeCapabilityDrawer && (
